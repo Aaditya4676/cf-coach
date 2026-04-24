@@ -11,11 +11,16 @@ import {
   BookmarkCheck,
   Settings,
   Zap,
+  Trophy,
 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useCFHandle } from '@/hooks/useCFHandle';
+import { getVirtualProfile } from '@/lib/quests';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/mentor', label: 'AI Mentor', icon: Brain },
+  { href: '/quests', label: 'Quests & Virtual Rating', icon: Trophy },
   { href: '/ladder', label: 'Practice Ladder', icon: ListOrdered },
   { href: '/progress', label: 'Progress', icon: TrendingUp },
   { href: '/review', label: 'Review Queue', icon: RotateCcw },
@@ -25,6 +30,15 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { handle, isReady } = useCFHandle();
+  const [level, setLevel] = useState(1);
+
+  useEffect(() => {
+    if (handle) {
+      const profile = getVirtualProfile(handle);
+      setLevel(profile.level);
+    }
+  }, [handle]);
 
   return (
     <aside className="sidebar" id="sidebar">
@@ -57,9 +71,9 @@ export function Sidebar() {
       <div className="sidebar-footer">
         <div className="text-xs text-muted" style={{ lineHeight: 1.5 }}>
           <div className="font-semibold" style={{ color: 'var(--text-secondary)' }}>
-            ZeoDraxyl
+            {isReady && handle && handle !== 'tourist' ? handle : 'Not Configured'}
           </div>
-          <div>Specialist • 1522</div>
+          <div>Virtual Level {level}</div>
         </div>
       </div>
     </aside>

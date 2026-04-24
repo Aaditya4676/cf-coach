@@ -260,3 +260,37 @@ Respond with JSON only (no markdown fences):
   "avoidFor3Days": "<what NOT to do right away (e.g., don't jump into hard problems)>"
 }`;
 }
+
+// --- QUEST ASSESSMENT PROMPT ---
+
+export function buildQuestAssessmentPrompt(
+  quests: import('./types').Quest[],
+  submissions: import('./types').CFSubmission[]
+): string {
+  const questStr = quests.map(q => 
+    `ID: ${q.id}\nTitle: ${q.title}\nDescription: ${q.description}\nTags: ${q.relatedTags.join(', ')}`
+  ).join('\n---\n');
+
+  const subsStr = submissions.slice(0, 50).map(s => 
+    `[${new Date(s.creationTimeSeconds * 1000).toISOString().split('T')[0]}] ${s.verdict} - r${s.problem.rating} [${s.problem.tags.join(', ')}]`
+  ).join('\n');
+
+  return `You are CF Coach, evaluating if a student completed their assigned learning quests.
+
+## ACTIVE QUESTS
+${questStr}
+
+## RECENT SUBMISSIONS (since quests were assigned)
+${subsStr}
+
+Analyze the submissions to determine if each quest was met. Be somewhat strict but fair. If a quest asked them to solve 3 DP problems, check if they successfully (OK) solved 3 DP problems.
+
+Respond ONLY with a JSON array (no markdown fences):
+[
+  {
+    "questId": "<id>",
+    "status": "completed" | "failed",
+    "feedback": "<brief explanation of why they passed or failed, be encouraging if failed, praise if completed>"
+  }
+]`;
+}

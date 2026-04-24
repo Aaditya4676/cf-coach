@@ -248,7 +248,7 @@ export default function DashboardPage() {
           <DifficultyTrendChart
             weeklyTrend={weeklyTrend}
             scatter={ratingScatter}
-            userRating={user?.rating || 1522}
+            userRating={user?.rating || 0}
           />
         </div>
       )}

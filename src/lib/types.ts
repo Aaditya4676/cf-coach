@@ -267,6 +267,31 @@ export interface MentorMemory {
   createdAt: string;
 }
 
+// --- Quests & Virtual Rating Types ---
+
+export interface Quest {
+  id: string;
+  title: string;          // Action item text
+  description: string;    // Reason
+  xpReward: number;       // e.g. High=50, Med=20, Low=5
+  targetDate: string;     // ISO format, deadline for checking
+  relatedTags: string[];
+  status: 'active' | 'completed' | 'failed';
+  feedback?: string;      // LLM's assessment text when evaluated
+  createdAt: string;
+  completedAt?: string;
+  assessedSubmissions?: string[]; // IDs of submissions evaluated
+}
+
+export interface VirtualProfile {
+  level: number;
+  xp: number;
+  totalXPEarned: number;
+  questsCompleted: number;
+  questsFailed: number;
+  streakMultipler: number;
+}
+
 // --- Spaced Repetition Types ---
 
 export interface ReviewItem {

@@ -126,12 +126,12 @@ export function RatingChart({ ratingHistory }: RatingChartProps) {
             labelFormatter={(_label: any, payload: readonly any[]) => {
               if (payload && payload[0]) {
                 return (
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{payload[0].payload.fullDate}</div>
-                    <div style={{ fontSize: 11, color: '#64748b', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ display: 'block' }}>
+                    <span style={{ fontWeight: 600, display: 'block' }}>{payload[0].payload.fullDate}</span>
+                    <span style={{ fontSize: 11, color: '#64748b', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
                       {payload[0].payload.contest}
-                    </div>
-                  </div>
+                    </span>
+                  </span>
                 );
               }
               return _label;

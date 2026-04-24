@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { MentorAnalysis, TimeRange, TIME_RANGE_LABELS } from '@/lib/types';
+import { convertActionItemsToQuests } from '@/lib/quests';
 import { useCFHandle } from '@/hooks/useCFHandle';
 import { TimeRangeSelector } from '@/components/TimeRangeSelector';
 import {
@@ -27,6 +28,7 @@ export default function MentorPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cached, setCached] = useState(false);
+  const [questsGenerated, setQuestsGenerated] = useState(false);
 
   useEffect(() => {
     if (isReady && needsSetup) {
@@ -51,8 +53,16 @@ export default function MentorPage() {
       }
 
       const data = await response.json();
-      setAnalysis(data.analysis);
+      const newAnalysis: MentorAnalysis = data.analysis;
+      setAnalysis(newAnalysis);
       setCached(data.cached);
+
+      if (!data.cached && handle) {
+        convertActionItemsToQuests(handle, newAnalysis.actionItems);
+        setQuestsGenerated(true);
+      } else {
+        setQuestsGenerated(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
@@ -151,6 +161,22 @@ export default function MentorPage() {
             </div>
             <p style={{ fontSize: 15, lineHeight: 1.7 }}>{analysis.summary}</p>
           </div>
+
+          {questsGenerated && (
+            <div className="card mb-lg" style={{ background: 'var(--accent-emerald-dim)', borderColor: 'var(--accent-emerald)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div className="flex items-center gap-sm">
+                <Sparkles size={20} style={{ color: 'var(--accent-emerald)' }} />
+                <span className="font-semibold text-sm">Action Items automatically added to your Quests!</span>
+              </div>
+              <button 
+                className="btn btn-sm" 
+                style={{ background: 'var(--accent-emerald)', color: '#000', border: 'none' }}
+                onClick={() => router.push('/quests')}
+              >
+                View Quests →
+              </button>
+            </div>
+          )}
 
           {/* Honest Feedback */}
           <div className="card mb-lg">
