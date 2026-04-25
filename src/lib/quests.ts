@@ -78,6 +78,12 @@ export function recordFailedQuest(handle: string): VirtualProfile {
 export function convertActionItemsToQuests(handle: string, items: ActionItem[]): Quest[] {
   const existing = getQuests(handle);
   
+  // Prevent stacking: if there are active quests, don't add new ones
+  const activeQuests = existing.filter(q => q.status === 'active');
+  if (activeQuests.length > 0) {
+    return [];
+  }
+  
   const xpMap = {
     high: 50,
     medium: 20,

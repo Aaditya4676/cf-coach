@@ -15,6 +15,20 @@ function formatTime(seconds: number) {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+function parseProblemInput(input: string): { contestId: number; index: string } | null {
+  input = input.trim();
+  let match = input.match(/contest\/(\d+)\/problem\/([A-Za-z0-9]+)/i);
+  if (match) return { contestId: parseInt(match[1]), index: match[2].toUpperCase() };
+  
+  match = input.match(/problemset\/problem\/(\d+)\/([A-Za-z0-9]+)/i);
+  if (match) return { contestId: parseInt(match[1]), index: match[2].toUpperCase() };
+  
+  match = input.match(/^(\d+)\s*([A-Za-z0-9]+)$/i);
+  if (match) return { contestId: parseInt(match[1]), index: match[2].toUpperCase() };
+  
+  return null;
+}
+
 export default function PracticePage() {
   const { handle, isReady } = useCFHandle();
   const [sessions, setSessions] = useState<SolveSession[]>([]);
@@ -25,6 +39,10 @@ export default function PracticePage() {
   const [elapsed, setElapsed] = useState(0);
   const [isPolling, setIsPolling] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [verifying, setVerifying] = useState(false);
+  const [verifiedProblem, setVerifiedProblem] = useState<CFProblem | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
   // Load data
   useEffect(() => {
@@ -112,13 +130,37 @@ export default function PracticePage() {
     };
   }, [activeSession, handle]);
 
+  const verifyProblem = async () => {
+    const parsed = parseProblemInput(urlInput);
+    if (!parsed) {
+      setVerifyError('Invalid format. Use URL or ID like "1553C"');
+      return;
+    }
+    
+    setVerifying(true);
+    setVerifyError(null);
+    try {
+      const res = await fetch(`/api/problem?contestId=${parsed.contestId}&index=${parsed.index}`);
+      if (!res.ok) {
+        throw new Error('Problem not found');
+      }
+      const data = await res.json();
+      setVerifiedProblem(data.problem);
+    } catch (err) {
+      setVerifyError(err instanceof Error ? err.message : 'Error fetching problem');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   const startPractice = () => {
     if (!handle || !urlInput.trim() || activeSession) return;
     
     const newSession: SolveSession = {
       id: crypto.randomUUID(),
       handle,
-      problemUrl: urlInput.trim(),
+      problemUrl: verifiedProblem ? `https://codeforces.com/problemset/problem/${verifiedProblem.contestId}/${verifiedProblem.index}` : urlInput.trim(),
+      problemInfo: verifiedProblem || undefined,
       startTime: new Date().toISOString(),
       status: 'active'
     };
@@ -175,20 +217,44 @@ export default function PracticePage() {
             <div className="w-full max-w-md mx-auto">
               <input
                 type="text"
-                placeholder="Paste Codeforces Problem URL..."
+                placeholder="Paste Codeforces Problem URL or ID (e.g. 1553C)"
                 value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                className="input-field mb-md w-full"
+                onChange={(e) => {
+                  setUrlInput(e.target.value);
+                  setVerifiedProblem(null);
+                  setVerifyError(null);
+                }}
+                className="input-field mb-sm w-full"
                 style={{ textAlign: 'center', fontFamily: 'monospace' }}
               />
-              <button 
-                className="btn btn-primary w-full flex items-center justify-center gap-sm"
-                onClick={startPractice}
-                disabled={!urlInput.trim()}
-                style={{ padding: '16px', fontSize: '16px' }}
-              >
-                <Play fill="currentColor" size={16} /> Start Timer
-              </button>
+              
+              {verifyError && (
+                <div className="text-red-500 text-xs mb-sm">{verifyError}</div>
+              )}
+
+              {!verifiedProblem ? (
+                <button 
+                  className="btn btn-primary w-full flex items-center justify-center gap-sm"
+                  onClick={verifyProblem}
+                  disabled={!urlInput.trim() || verifying}
+                  style={{ padding: '16px', fontSize: '16px' }}
+                >
+                  {verifying ? <Loader2 size={16} className="spinner" /> : <Target size={16} />} Verify Problem
+                </button>
+              ) : (
+                <div className="flex flex-col gap-sm">
+                  <div className="text-sm p-sm rounded border" style={{ borderColor: 'var(--accent-emerald)', background: 'var(--accent-emerald-dim)', color: 'var(--accent-emerald)' }}>
+                    ✅ Verified: <strong>{verifiedProblem.contestId}{verifiedProblem.index} - {verifiedProblem.name}</strong> ({verifiedProblem.rating || 'Unrated'})
+                  </div>
+                  <button 
+                    className="btn btn-primary w-full flex items-center justify-center gap-sm"
+                    onClick={startPractice}
+                    style={{ padding: '16px', fontSize: '16px' }}
+                  >
+                    <Play fill="currentColor" size={16} /> Start Timer
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="w-full max-w-md mx-auto">
