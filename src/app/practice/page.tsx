@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useCFHandle } from '@/hooks/useCFHandle';
 import { SolveSession, getSolveSessions, saveSolveSession, getActiveSession } from '@/lib/practice-timer';
-import { Timer, Play, Square, CheckCircle2, XCircle, Loader2, Target, BarChart3 } from 'lucide-react';
+import { Timer, Play, Square, CheckCircle2, XCircle, Loader2, Target } from 'lucide-react';
 import { getUserSubmissions } from '@/lib/codeforces';
 import { CFProblem } from '@/lib/types';
 import PracticeAnalytics from '@/components/PracticeAnalytics';
@@ -296,7 +296,7 @@ export default function PracticePage() {
             <div className="stat-card">
               <div className="stat-label">Average Time</div>
               <div className="stat-value">{formatTime(avgTime)}</div>
-              <div className="stat-icon"><BarChart3 size={16} /></div>
+              <div className="stat-icon"><Timer size={16} /></div>
             </div>
           </div>
 
@@ -341,18 +341,7 @@ export default function PracticePage() {
         </div>
       </div>
 
-      <div className="mt-2xl">
-        <div className="section-header">
-          <h2 className="section-title flex items-center gap-sm">
-            <BarChart3 size={24} className="text-accent-purple" />
-            Performance Insights
-          </h2>
-          <p className="section-description">
-            Detailed breakdown of your solving speed and consistency.
-          </p>
-        </div>
-        <PracticeAnalytics sessions={sessions} />
-      </div>
+      <PracticeAnalytics sessions={sessions} />
     </div>
   );
 }
