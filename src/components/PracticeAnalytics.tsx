@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   LineChart, Line, Cell, PieChart, Pie, AreaChart, Area, ScatterChart, Scatter, ZAxis
 } from 'recharts';
 import { SolveSession } from '@/lib/practice-timer';
-import { BarChart3, TrendingUp, Clock, Target, Zap, Activity, Award, Flame } from 'lucide-react';
+import { BarChart3, TrendingUp, Clock, Target, Zap, Activity, Award, Flame, Brain, Gauge, TrendingDown } from 'lucide-react';
 
 interface PracticeAnalyticsProps {
   sessions: SolveSession[];
@@ -16,6 +16,107 @@ const COLORS = [
   '#06b6d4', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444',
   '#ec4899', '#3b82f6', '#14b8a6', '#f97316', '#a855f7'
 ];
+
+// ---- Difficulty vs Speed Panel (multi-mode) ----
+type DvSMode = 'scatter' | 'bar' | 'line';
+
+interface DvSProps {
+  scatterData: { rating: number; minutes: number; name: string }[];
+  ratingData: { rating: string; avgMinutes: number; count: number }[];
+}
+
+function DifficultySpeedPanel({ scatterData, ratingData }: DvSProps) {
+  const [mode, setMode] = useState<DvSMode>('scatter');
+
+  const modes: { key: DvSMode; label: string; emoji: string }[] = [
+    { key: 'scatter', label: 'Scatter', emoji: '🔵' },
+    { key: 'bar',     label: 'Avg Bar', emoji: '📊' },
+    { key: 'line',    label: 'Line',    emoji: '📈' },
+  ];
+
+  const tooltipStyle = { background: '#0d1117', border: '1px solid #ffffff20', borderRadius: 8, fontSize: 12 };
+
+  return (
+    <div className="card" style={{ padding: 'var(--space-lg)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-md)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+          <Activity size={16} style={{ color: 'var(--accent-amber)' }} />
+          <h3 style={{ fontSize: 14, fontWeight: 600 }}>Difficulty vs Speed</h3>
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {modes.map(m => (
+            <button
+              key={m.key}
+              onClick={() => setMode(m.key)}
+              style={{
+                padding: '3px 10px', fontSize: 11, borderRadius: 6, cursor: 'pointer',
+                background: mode === m.key ? 'var(--accent-amber)' : 'transparent',
+                color: mode === m.key ? '#000' : 'var(--text-muted)',
+                border: `1px solid ${mode === m.key ? 'var(--accent-amber)' : '#ffffff20'}`,
+                fontWeight: mode === m.key ? 700 : 400,
+                transition: 'all 0.15s',
+              }}
+            >{m.emoji} {m.label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ width: '100%', height: 250 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          {mode === 'scatter' ? (
+            <ScatterChart>
+              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
+              <XAxis dataKey="rating" name="Rating" stroke="#ffffff60" fontSize={10} tickLine={false}
+                label={{ value: 'Rating', position: 'insideBottom', offset: -5, fill: '#ffffff40', fontSize: 10 }} />
+              <YAxis dataKey="minutes" name="Minutes" stroke="#ffffff60" fontSize={10} tickLine={false}
+                label={{ value: 'Min', angle: -90, position: 'insideLeft', fill: '#ffffff40', fontSize: 10 }} />
+              <ZAxis range={[40, 200]} />
+              <Tooltip contentStyle={tooltipStyle}
+                content={({ active, payload }: any) => {
+                  if (!active || !payload?.length) return null;
+                  const d = payload[0].payload;
+                  return (
+                    <div style={tooltipStyle as any}>
+                      <p style={{ fontWeight: 700, color: '#fff', marginBottom: 4 }}>{d.name}</p>
+                      <p style={{ color: '#f59e0b' }}>Rating: {d.rating}</p>
+                      <p style={{ color: '#06b6d4' }}>Time: {d.minutes} min</p>
+                    </div>
+                  );
+                }}
+              />
+              <Scatter data={scatterData} fill="#f59e0b">
+                {scatterData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+              </Scatter>
+            </ScatterChart>
+          ) : mode === 'bar' ? (
+            <BarChart data={ratingData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+              <XAxis dataKey="rating" stroke="#ffffff60" fontSize={11} tickLine={false} axisLine={false} />
+              <YAxis stroke="#ffffff60" fontSize={10} tickLine={false} axisLine={false}
+                label={{ value: 'Min', angle: -90, position: 'insideLeft', fill: '#ffffff40', fontSize: 10 }} />
+              <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: '#fff', fontWeight: 700 }}
+                formatter={(v: any) => [`${v} min avg`, 'Avg Time']} />
+              <Bar dataKey="avgMinutes" radius={[6, 6, 0, 0]}>
+                {ratingData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+              </Bar>
+            </BarChart>
+          ) : (
+            <LineChart data={ratingData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+              <XAxis dataKey="rating" stroke="#ffffff60" fontSize={11} tickLine={false} axisLine={false} />
+              <YAxis stroke="#ffffff60" fontSize={10} tickLine={false} axisLine={false}
+                label={{ value: 'Min', angle: -90, position: 'insideLeft', fill: '#ffffff40', fontSize: 10 }} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`${v} min`, 'Avg Time']} />
+              <Line type="monotone" dataKey="avgMinutes" stroke="#f59e0b" strokeWidth={2.5}
+                dot={{ r: 5, fill: '#f59e0b', stroke: '#0d1117', strokeWidth: 2 }}
+                activeDot={{ r: 7, fill: '#f59e0b' }} />
+            </LineChart>
+          )}
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
 
 export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) {
   const completedSessions = useMemo(() => 
@@ -62,6 +163,27 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
       }
     }
 
+    // Efficiency: avg solve time per 100 rating points (lower = better)
+    const withRating = completedSessions.filter(s => s.problemInfo?.rating);
+    const efficiencyScore = withRating.length > 0
+      ? Math.round(
+          withRating.reduce((a, s) => a + (s.durationSeconds || 0) / (s.problemInfo!.rating! / 100), 0)
+          / withRating.length
+        )
+      : 0;
+
+    // Consistency: coefficient of variation (lower = more consistent)
+    const stdDev = durations.length > 1
+      ? Math.sqrt(durations.reduce((a, d) => a + Math.pow(d - avgTime, 2), 0) / durations.length)
+      : 0;
+    const consistencyPct = avgTime > 0 ? Math.max(0, Math.round(100 - (stdDev / avgTime) * 100)) : 0;
+
+    // Improvement rate: compare first half avg vs second half avg (negative = faster = better)
+    const half = Math.floor(durations.length / 2);
+    const firstHalfAvg = half > 0 ? durations.slice(0, half).reduce((a, b) => a + b, 0) / half : 0;
+    const secondHalfAvg = half > 0 ? durations.slice(half).reduce((a, b) => a + b, 0) / (durations.length - half) : 0;
+    const improvementRate = half > 0 ? Math.round(((firstHalfAvg - secondHalfAvg) / firstHalfAvg) * 100) : 0;
+
     return {
       totalSolves: completedSessions.length,
       totalTime,
@@ -73,6 +195,9 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
       maxRating,
       streak,
       uniqueDays: daySet.size,
+      efficiencyScore,
+      consistencyPct,
+      improvementRate,
     };
   }, [completedSessions]);
 
@@ -100,16 +225,23 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
       .sort((a, b) => Number(a.rating) - Number(b.rating));
   }, [completedSessions]);
 
-  // --- Solve Trend (Last 10) ---
+  // --- Solve Trend (Last 10) — difficulty-normalized ---
   const trendData = useMemo(() => {
     return completedSessions
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-      .map((s, idx) => ({
-        index: idx + 1,
-        minutes: Number(((s.durationSeconds || 0) / 60).toFixed(1)),
-        rating: s.problemInfo?.rating || 'N/A',
-        name: s.problemInfo?.name || 'Problem'
-      }))
+      .map((s, idx) => {
+        const minutes = Number(((s.durationSeconds || 0) / 60).toFixed(1));
+        const rating = s.problemInfo?.rating || 0;
+        // normalizedSpeed: minutes per 100 rating points — lower means faster relative to difficulty
+        const normalizedSpeed = rating > 0 ? Number((minutes / (rating / 100)).toFixed(2)) : null;
+        return {
+          index: idx + 1,
+          minutes,
+          rating: rating || 'N/A',
+          normalizedSpeed,
+          name: s.problemInfo?.name || 'Problem'
+        };
+      })
       .slice(-10);
   }, [completedSessions]);
 
@@ -213,44 +345,84 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
 
       {/* Key Stats Row */}
       {stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 'var(--space-md)' }}>
-          <div className="card" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
-            <div className="text-muted text-xs" style={{ marginBottom: 4 }}>Fastest Solve</div>
-            <div className="font-bold font-mono" style={{ fontSize: 22, color: 'var(--accent-emerald)' }}>
-              {formatTime(stats.fastest)}
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 'var(--space-md)' }}>
+            <div className="card" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
+              <div className="text-muted text-xs" style={{ marginBottom: 4 }}>Fastest Solve</div>
+              <div className="font-bold font-mono" style={{ fontSize: 22, color: 'var(--accent-emerald)' }}>
+                {formatTime(stats.fastest)}
+              </div>
+            </div>
+            <div className="card" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
+              <div className="text-muted text-xs" style={{ marginBottom: 4 }}>Median Time</div>
+              <div className="font-bold font-mono" style={{ fontSize: 22, color: 'var(--accent-cyan)' }}>
+                {formatTime(stats.median)}
+              </div>
+            </div>
+            <div className="card" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
+              <div className="text-muted text-xs" style={{ marginBottom: 4 }}>Avg Time</div>
+              <div className="font-bold font-mono" style={{ fontSize: 22, color: '#a78bfa' }}>
+                {formatTime(Math.round(stats.avgTime))}
+              </div>
+            </div>
+            <div className="card" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
+              <div className="text-muted text-xs" style={{ marginBottom: 4 }}>Avg Rating Solved</div>
+              <div className="font-bold font-mono" style={{ fontSize: 22, color: 'var(--accent-purple)' }}>
+                {stats.avgRating || '—'}
+              </div>
+            </div>
+            <div className="card" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
+              <div className="text-muted text-xs" style={{ marginBottom: 4 }}>Hardest Solved</div>
+              <div className="font-bold font-mono" style={{ fontSize: 22, color: 'var(--accent-amber)' }}>
+                {stats.maxRating || '—'}
+              </div>
+            </div>
+            <div className="card" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
+              <div className="text-muted text-xs" style={{ marginBottom: 4 }}>Practice Streak</div>
+              <div className="font-bold font-mono flex items-center justify-center gap-xs" style={{ fontSize: 22, color: 'var(--accent-red)' }}>
+                <Flame size={18} /> {stats.streak}d
+              </div>
+            </div>
+            <div className="card" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
+              <div className="text-muted text-xs" style={{ marginBottom: 4 }}>Active Days</div>
+              <div className="font-bold font-mono" style={{ fontSize: 22, color: 'var(--accent-blue)' }}>
+                {stats.uniqueDays}
+              </div>
             </div>
           </div>
-          <div className="card" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
-            <div className="text-muted text-xs" style={{ marginBottom: 4 }}>Median Time</div>
-            <div className="font-bold font-mono" style={{ fontSize: 22, color: 'var(--accent-cyan)' }}>
-              {formatTime(stats.median)}
+
+          {/* Extra Insight Boxes */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-md)' }}>
+            <div className="card" style={{ padding: 'var(--space-md)', display: 'flex', gap: 'var(--space-md)', alignItems: 'center' }}>
+              <Gauge size={32} style={{ color: 'var(--accent-cyan)', flexShrink: 0 }} />
+              <div>
+                <div className="text-muted text-xs" style={{ marginBottom: 2 }}>Efficiency Score</div>
+                <div className="font-bold font-mono" style={{ fontSize: 20, color: 'var(--accent-cyan)' }}>{stats.efficiencyScore > 0 ? `${stats.efficiencyScore}s` : '—'}</div>
+                <div className="text-xs text-muted">sec per 100 rating pts · lower = better</div>
+              </div>
+            </div>
+            <div className="card" style={{ padding: 'var(--space-md)', display: 'flex', gap: 'var(--space-md)', alignItems: 'center' }}>
+              <Brain size={32} style={{ color: '#10b981', flexShrink: 0 }} />
+              <div>
+                <div className="text-muted text-xs" style={{ marginBottom: 2 }}>Consistency Index</div>
+                <div className="font-bold font-mono" style={{ fontSize: 20, color: '#10b981' }}>{stats.consistencyPct}%</div>
+                <div className="text-xs text-muted">low variance = predictable solver</div>
+              </div>
+            </div>
+            <div className="card" style={{ padding: 'var(--space-md)', display: 'flex', gap: 'var(--space-md)', alignItems: 'center' }}>
+              {stats.improvementRate >= 0
+                ? <TrendingUp size={32} style={{ color: '#06b6d4', flexShrink: 0 }} />
+                : <TrendingDown size={32} style={{ color: '#ef4444', flexShrink: 0 }} />}
+              <div>
+                <div className="text-muted text-xs" style={{ marginBottom: 2 }}>Speed Improvement</div>
+                <div className="font-bold font-mono" style={{ fontSize: 20, color: stats.improvementRate >= 0 ? '#06b6d4' : '#ef4444' }}>
+                  {stats.improvementRate >= 0 ? '+' : ''}{stats.improvementRate}%
+                </div>
+                <div className="text-xs text-muted">1st half vs 2nd half avg time</div>
+              </div>
             </div>
           </div>
-          <div className="card" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
-            <div className="text-muted text-xs" style={{ marginBottom: 4 }}>Avg Rating Solved</div>
-            <div className="font-bold font-mono" style={{ fontSize: 22, color: 'var(--accent-purple)' }}>
-              {stats.avgRating || '—'}
-            </div>
-          </div>
-          <div className="card" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
-            <div className="text-muted text-xs" style={{ marginBottom: 4 }}>Hardest Solved</div>
-            <div className="font-bold font-mono" style={{ fontSize: 22, color: 'var(--accent-amber)' }}>
-              {stats.maxRating || '—'}
-            </div>
-          </div>
-          <div className="card" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
-            <div className="text-muted text-xs" style={{ marginBottom: 4 }}>Practice Streak</div>
-            <div className="font-bold font-mono flex items-center justify-center gap-xs" style={{ fontSize: 22, color: 'var(--accent-red)' }}>
-              <Flame size={18} /> {stats.streak}d
-            </div>
-          </div>
-          <div className="card" style={{ padding: 'var(--space-md)', textAlign: 'center' }}>
-            <div className="text-muted text-xs" style={{ marginBottom: 4 }}>Active Days</div>
-            <div className="font-bold font-mono" style={{ fontSize: 22, color: 'var(--accent-blue)' }}>
-              {stats.uniqueDays}
-            </div>
-          </div>
-        </div>
+        </>
       )}
 
       {/* Charts Row 1: Rating vs Time + Trend */}
@@ -297,54 +469,52 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
           </div>
         )}
 
-        {/* Solving Speed Trend */}
+        {/* Solving Speed Trend — difficulty-normalized */}
         {trendData.length > 1 && (
           <div className="card" style={{ padding: 'var(--space-lg)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', marginBottom: 'var(--space-md)' }}>
-              <TrendingUp size={16} style={{ color: 'var(--accent-emerald)' }} />
-              <h3 style={{ fontSize: 14, fontWeight: 600 }}>Solving Speed Trend (Last 10)</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-md)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                <TrendingUp size={16} style={{ color: 'var(--accent-emerald)' }} />
+                <h3 style={{ fontSize: 14, fontWeight: 600 }}>Speed Trend (Last 10, Difficulty-Adjusted)</h3>
+              </div>
             </div>
-            <div style={{ width: '100%', height: 250 }}>
+            <div className="text-xs text-muted" style={{ marginBottom: 8 }}>
+              <span style={{ color: '#06b6d4' }}>━</span> Raw minutes &nbsp;
+              <span style={{ color: '#f59e0b' }}>━━</span> Normalized (min per 100 rating pts) — falling line = getting faster relative to difficulty
+            </div>
+            <div style={{ width: '100%', height: 240 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={trendData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                  <XAxis 
-                    dataKey="index" 
-                    stroke="#ffffff60" 
-                    fontSize={10} 
-                    tickLine={false} 
-                    axisLine={false}
-                  />
-                  <YAxis 
-                    stroke="#ffffff60" 
-                    fontSize={10} 
-                    tickLine={false} 
-                    axisLine={false}
-                  />
-                  <Tooltip 
+                  <XAxis dataKey="index" stroke="#ffffff60" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis yAxisId="left" stroke="#ffffff60" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis yAxisId="right" orientation="right" stroke="#ffffff60" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip
                     contentStyle={{ background: '#0d1117', border: '1px solid #ffffff20', borderRadius: 8, fontSize: 12 }}
                     content={({ active, payload }: any) => {
                       if (active && payload && payload.length) {
-                        const data = payload[0].payload;
+                        const d = payload[0].payload;
                         return (
                           <div style={{ background: '#0d1117', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, padding: '8px 12px' }}>
-                            <p style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 4 }}>{data.name}</p>
-                            <p style={{ fontSize: 11, color: '#ffffff80', marginBottom: 2 }}>Rating: {data.rating}</p>
-                            <p style={{ fontSize: 12, color: '#06b6d4' }}>Time: {data.minutes} min</p>
+                            <p style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 4 }}>{d.name}</p>
+                            <p style={{ fontSize: 11, color: '#ffffff70', marginBottom: 2 }}>Rating: {d.rating}</p>
+                            <p style={{ fontSize: 12, color: '#06b6d4' }}>Time: {d.minutes} min</p>
+                            {d.normalizedSpeed != null && (
+                              <p style={{ fontSize: 11, color: '#f59e0b' }}>Normalized: {d.normalizedSpeed} min/100pts</p>
+                            )}
                           </div>
                         );
                       }
                       return null;
-                    }} 
+                    }}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="minutes" 
-                    stroke="#06b6d4"
-                    strokeWidth={2.5} 
-                    dot={{ r: 5, fill: '#06b6d4', stroke: '#0d1117', strokeWidth: 2 }}
-                    activeDot={{ r: 7, fill: '#06b6d4', stroke: 'white', strokeWidth: 2 }}
-                  />
+                  <Line yAxisId="left" type="monotone" dataKey="minutes" stroke="#06b6d4" strokeWidth={2.5}
+                    dot={{ r: 4, fill: '#06b6d4', stroke: '#0d1117', strokeWidth: 2 }}
+                    activeDot={{ r: 6, fill: '#06b6d4', stroke: 'white', strokeWidth: 2 }} name="Raw (min)" />
+                  <Line yAxisId="right" type="monotone" dataKey="normalizedSpeed" stroke="#f59e0b" strokeWidth={2}
+                    strokeDasharray="5 3"
+                    dot={{ r: 4, fill: '#f59e0b', stroke: '#0d1117', strokeWidth: 2 }}
+                    activeDot={{ r: 6, fill: '#f59e0b' }} name="Normalized" connectNulls />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -354,48 +524,9 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
 
       {/* Charts Row 2: Scatter + Rating Distribution */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'var(--space-lg)' }}>
-        {/* Scatter: Rating vs Solve Time */}
-        {scatterData.length > 1 && (
-          <div className="card" style={{ padding: 'var(--space-lg)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', marginBottom: 'var(--space-md)' }}>
-              <Activity size={16} style={{ color: 'var(--accent-amber)' }} />
-              <h3 style={{ fontSize: 14, fontWeight: 600 }}>Difficulty vs Speed</h3>
-            </div>
-            <div style={{ width: '100%', height: 250 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
-                  <XAxis 
-                    dataKey="rating" 
-                    name="Rating" 
-                    stroke="#ffffff60" 
-                    fontSize={10} 
-                    tickLine={false}
-                    label={{ value: 'Rating', position: 'insideBottom', offset: -5, fill: '#ffffff40', fontSize: 10 }}
-                  />
-                  <YAxis 
-                    dataKey="minutes" 
-                    name="Minutes" 
-                    stroke="#ffffff60" 
-                    fontSize={10} 
-                    tickLine={false}
-                    label={{ value: 'Min', angle: -90, position: 'insideLeft', fill: '#ffffff40', fontSize: 10 }}
-                  />
-                  <ZAxis range={[40, 200]} />
-                  <Tooltip 
-                    contentStyle={{ background: '#0d1117', border: '1px solid #ffffff20', borderRadius: 8, fontSize: 12 }}
-                    formatter={(value: any, name: any) => [name === 'Rating' ? value : `${value} min`, name]}
-                    labelFormatter={() => ''}
-                  />
-                  <Scatter data={scatterData} fill="#f59e0b">
-                    {scatterData.map((_, index) => (
-                      <Cell key={`dot-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Scatter>
-                </ScatterChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+        {/* Difficulty vs Speed — multi-mode */}
+        {scatterData.length > 0 && (
+          <DifficultySpeedPanel scatterData={scatterData} ratingData={ratingData} />
         )}
 
         {/* Rating Distribution Pie */}
