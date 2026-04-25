@@ -51,9 +51,10 @@ export default function QuestsPage() {
   const runAssessment = async (questsToAssess: Quest[]) => {
     setAssessing(true);
     try {
+      const { getAIHeaders } = await import('@/hooks/useAISettings');
       const response = await fetch('/api/assess-quests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAIHeaders(),
         body: JSON.stringify({ handle, quests: questsToAssess }),
       });
 

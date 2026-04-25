@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserInfo, getUserSubmissions, getSubmissionsInTimeRange, hashSubmissions, getUniqueSolvedProblems } from '@/lib/codeforces';
+import { getUserInfo, getUserSubmissions, getSubmissionsInTimeRange, hashSubmissions, getUserRatingHistory } from '@/lib/codeforces';
 import { computeAnalytics } from '@/lib/analytics';
-import { callGemini } from '@/lib/gemini';
+import { callAI, getAIOptionsFromHeaders } from '@/lib/ai-client';
 import { buildMentorAnalysisPrompt } from '@/lib/prompts';
 import { MentorAnalysis, TIME_RANGE_DAYS, TIME_RANGE_LABELS, TimeRange } from '@/lib/types';
 
@@ -13,19 +13,17 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { handle, timeRange = '7d' } = body as { handle: string; timeRange: TimeRange };
+    const aiOptions = getAIOptionsFromHeaders(request.headers);
 
     if (!handle) {
       return NextResponse.json({ error: 'Missing handle' }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
-    }
-
     // 1. Fetch data from CF
-    const [userInfo, allSubmissions] = await Promise.all([
+    const [userInfo, allSubmissions, ratingHistory] = await Promise.all([
       getUserInfo(handle),
       getUserSubmissions(handle, 1, 500),
+      getUserRatingHistory(handle),
     ]);
 
     const days = TIME_RANGE_DAYS[timeRange];
@@ -43,10 +41,9 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Compute local analytics
-    const analytics = computeAnalytics(allSubmissions, userInfo, timeRange);
+    const analytics = computeAnalytics(allSubmissions, ratingHistory, userInfo, timeRange);
 
-    // 4. Build prompt and call Gemini
-    // Pass empty memories for now (would come from DB in production)
+    // 4. Build prompt and call AI
     const prompt = buildMentorAnalysisPrompt(
       userInfo,
       submissions,
@@ -55,7 +52,7 @@ export async function POST(request: NextRequest) {
       TIME_RANGE_LABELS[timeRange]
     );
 
-    const analysis = await callGemini<MentorAnalysis>(prompt);
+    const analysis = await callAI<MentorAnalysis>(prompt, aiOptions);
     analysis.timestamp = new Date().toISOString();
 
     // 5. Cache the result

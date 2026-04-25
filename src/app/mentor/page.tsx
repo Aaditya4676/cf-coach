@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { MentorAnalysis, TimeRange, TIME_RANGE_LABELS } from '@/lib/types';
 import { convertActionItemsToQuests } from '@/lib/quests';
 import { useCFHandle } from '@/hooks/useCFHandle';
+import { getAIHeaders } from '@/hooks/useAISettings';
 import { TimeRangeSelector } from '@/components/TimeRangeSelector';
 import {
   Brain,
@@ -43,7 +44,7 @@ export default function MentorPage() {
 
       const response = await fetch('/api/analyze', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAIHeaders(),
         body: JSON.stringify({ handle, timeRange }),
       });
 

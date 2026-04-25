@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserInfo, getUserSubmissions, getAllProblems, getUniqueSolvedProblems, getProblemId } from '@/lib/codeforces';
 import { computeTagStats } from '@/lib/analytics';
-import { callGemini } from '@/lib/gemini';
+import { callAI, getAIOptionsFromHeaders } from '@/lib/ai-client';
 import { buildLadderPrompt } from '@/lib/prompts';
 import { LadderProblem } from '@/lib/types';
 
@@ -9,13 +9,10 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { handle, focusTags, difficultyMin, difficultyMax, count = 20 } = body;
+    const aiOptions = getAIOptionsFromHeaders(request.headers);
 
     if (!handle) {
       return NextResponse.json({ error: 'Missing handle' }, { status: 400 });
-    }
-
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
     }
 
     // 1. Get user info + submissions + problemset
@@ -47,14 +44,14 @@ export async function POST(request: NextRequest) {
       { focusTags, difficultyMin, difficultyMax, count }
     );
 
-    const ladderProblems = await callGemini<Array<{
+    const ladderProblems = await callAI<Array<{
       contestId: number;
       index: string;
       name: string;
       rating: number;
       tags: string[];
       reason: string;
-    }>>(prompt);
+    }>>(prompt, aiOptions);
 
     // 5. Format response
     const formattedProblems: LadderProblem[] = ladderProblems.map(p => ({

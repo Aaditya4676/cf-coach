@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { LadderProblem, ALL_CF_TAGS } from '@/lib/types';
 import { useCFHandle } from '@/hooks/useCFHandle';
+import { getAIHeaders } from '@/hooks/useAISettings';
 import { ExternalLink, Sparkles, Loader2, Save, CheckCircle2, RotateCcw } from 'lucide-react';
 
 function getDiffColor(rating: number): string {
@@ -45,7 +46,7 @@ export default function LadderPage() {
 
       const response = await fetch('/api/ladder', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAIHeaders(),
         body: JSON.stringify({
           handle: handle,
           focusTags: focusTags.length > 0 ? focusTags : undefined,

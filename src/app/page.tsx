@@ -60,7 +60,7 @@ export default function DashboardPage() {
       setSubmissions(subs);
       setRatingHistory(ratings);
 
-      const analyticsData = computeAnalytics(subs, userInfo, timeRange);
+      const analyticsData = computeAnalytics(subs, ratings, userInfo, timeRange);
       setAnalytics(analyticsData);
 
       const days = TIME_RANGE_DAYS[timeRange];
@@ -81,7 +81,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (user && submissions.length > 0) {
-      const analyticsData = computeAnalytics(submissions, user, timeRange);
+      const analyticsData = computeAnalytics(submissions, ratingHistory, user, timeRange);
       setAnalytics(analyticsData);
     }
   }, [timeRange, user, submissions]);
@@ -144,19 +144,21 @@ export default function DashboardPage() {
                 value={`${analytics?.practiceQualityScore || 0}/100`}
                 icon={<Zap size={16} />}
                 trend={
-                  (analytics?.practiceQualityScore || 0) >= 70
-                    ? 'Good practice!'
-                    : 'Needs improvement'
+                  analytics?.userProfile === 'contest_specialist' 
+                    ? `Contest heavy (${analytics.contestPerformanceScore} avg)`
+                    : analytics?.userProfile === 'practice_focused'
+                      ? `Practice heavy`
+                      : 'Balanced profile'
                 }
-                trendType={(analytics?.practiceQualityScore || 0) >= 70 ? 'positive' : 'negative'}
+                trendType={(analytics?.practiceQualityScore || 0) >= 70 ? 'positive' : 'neutral'}
                 color="var(--accent-emerald)"
               />
               <StatCard
                 label="Rating Trend"
                 value={analytics?.ratingTrend === 'rising' ? '↑ Rising' : analytics?.ratingTrend === 'falling' ? '↓ Falling' : '→ Stable'}
                 icon={<TrendingUp size={16} />}
-                trend={`${TIME_RANGE_LABELS[timeRange]} trend`}
-                trendType={analytics?.ratingTrend === 'rising' ? 'positive' : analytics?.ratingTrend === 'falling' ? 'negative' : 'neutral'}
+                trend={analytics?.ratingPrediction?.reasoning || `${TIME_RANGE_LABELS[timeRange]} trend`}
+                trendType={analytics?.ratingPrediction?.predictedDelta && analytics.ratingPrediction.predictedDelta > 0 ? 'positive' : 'neutral'}
                 color="var(--accent-amber)"
               />
             </div>
@@ -189,7 +191,17 @@ export default function DashboardPage() {
           <>
             <div className="card">
               <div className="card-header">
-                <div className="card-title">Rating History</div>
+                <div className="card-title flex items-center gap-sm">
+                  Rating History
+                  {analytics?.ratingPrediction && (
+                    <div className="badge" style={{ 
+                      background: analytics.ratingPrediction.predictedDelta > 0 ? 'var(--accent-emerald-dim)' : 'var(--bg-input)',
+                      color: analytics.ratingPrediction.predictedDelta > 0 ? 'var(--accent-emerald)' : 'var(--text-muted)'
+                    }}>
+                      {analytics.ratingPrediction.predictedDelta > 0 ? `Predicting +${analytics.ratingPrediction.predictedDelta}` : 'Predicting Steady'}
+                    </div>
+                  )}
+                </div>
               </div>
               <RatingChart ratingHistory={ratingHistory} />
             </div>

@@ -12,6 +12,7 @@ import {
   Settings,
   Zap,
   Trophy,
+  Timer,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useCFHandle } from '@/hooks/useCFHandle';
@@ -21,6 +22,7 @@ const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/mentor', label: 'AI Mentor', icon: Brain },
   { href: '/quests', label: 'Quests & Virtual Rating', icon: Trophy },
+  { href: '/practice', label: 'Live Practice', icon: Timer },
   { href: '/ladder', label: 'Practice Ladder', icon: ListOrdered },
   { href: '/progress', label: 'Progress', icon: TrendingUp },
   { href: '/review', label: 'Review Queue', icon: RotateCcw },

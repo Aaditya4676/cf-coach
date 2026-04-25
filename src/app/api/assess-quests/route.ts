@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { callGemini } from '@/lib/gemini';
+import { callAI, getAIOptionsFromHeaders } from '@/lib/ai-client';
 import { buildQuestAssessmentPrompt } from '@/lib/prompts';
 import { Quest, CFSubmission } from '@/lib/types';
 import { getUserSubmissions } from '@/lib/codeforces';
@@ -7,6 +7,7 @@ import { getUserSubmissions } from '@/lib/codeforces';
 export async function POST(request: Request) {
   try {
     const { handle, quests } = await request.json();
+    const aiOptions = getAIOptionsFromHeaders(new Headers(request.headers));
 
     if (!handle || !quests || !Array.isArray(quests) || quests.length === 0) {
       return NextResponse.json({ error: 'Handle and quests array are required' }, { status: 400 });
@@ -19,19 +20,16 @@ export async function POST(request: Request) {
       if (qDate < oldestDate) oldestDate = qDate;
     });
 
-    // We fetch a larger chunk of submissions to cover the time span
+    // Fetch submissions covering the time span
     const allSubs = await getUserSubmissions(handle, 1, 300);
     
-    // Filter submissions that happened AFTER the oldest quest was created
-    const oldestTimestampStr = (oldestDate.getTime() / 1000).toString();
+    const oldestTimestamp = oldestDate.getTime() / 1000;
     const relevantSubs = allSubs.filter((s: CFSubmission) => 
-      s.creationTimeSeconds >= parseInt(oldestTimestampStr)
+      s.creationTimeSeconds >= oldestTimestamp
     );
 
     const prompt = buildQuestAssessmentPrompt(quests, relevantSubs);
-    
-    // Call Gemini with JSON mode enforced
-    const assessmentResults = await callGemini<any[]>(prompt);
+    const assessmentResults = await callAI<any[]>(prompt, aiOptions);
     
     return NextResponse.json({ results: assessmentResults });
 

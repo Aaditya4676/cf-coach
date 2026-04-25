@@ -6,6 +6,7 @@ import { format, subDays, startOfWeek, differenceInDays, parseISO } from 'date-f
 import {
   CFSubmission,
   CFUser,
+  CFRatingChange,
   TagStats,
   DifficultyBucket,
   DailyActivity,
@@ -15,6 +16,7 @@ import {
   TIME_RANGE_DAYS,
   WeeklyDifficultyPoint,
   ProblemRatingPoint,
+  RatingPrediction,
 } from './types';
 import { getSubmissionsInTimeRange, getUniqueSolvedProblems } from './codeforces';
 
@@ -169,45 +171,163 @@ export function computeStreak(submissions: CFSubmission[]): StreakInfo {
   };
 }
 
-// --- Practice Quality Score ---
+// --- Smarter Practice Quality & Profiling ---
 
 export function computePracticeQuality(
   submissions: CFSubmission[],
-  userRating: number
-): number {
-  const solved = getUniqueSolvedProblems(submissions);
-  if (solved.length === 0) return 0;
-
-  let score = 0;
-  let count = 0;
-
-  for (const sub of solved) {
-    const problemRating = sub.problem.rating || 800;
-    const diff = problemRating - userRating;
-
-    // Score based on how close problem is to optimal zone
-    // Optimal: -200 to +300 above user's rating
-    if (diff >= -200 && diff <= 300) {
-      // Sweet spot
-      score += 80 + (diff > 0 ? Math.min(diff / 15, 20) : 0);
-    } else if (diff > 300) {
-      // Impressive but diminishing returns
-      score += 90;
-    } else if (diff < -200) {
-      // Too easy — this is what we want to flag
-      const penalty = Math.min(Math.abs(diff + 200) / 10, 60);
-      score += Math.max(20, 60 - penalty);
+  ratingHistory: CFRatingChange[],
+  userRating: number,
+  days: number
+): {
+  score: number;
+  contestScore: number;
+  userProfile: 'practice_focused' | 'contest_specialist' | 'balanced';
+} {
+  const cutoff = Date.now() / 1000 - days * 86400;
+  const recentSubmissions = submissions.filter(s => s.creationTimeSeconds >= cutoff);
+  const recentContests = ratingHistory.filter(c => c.ratingUpdateTimeSeconds >= cutoff);
+  const solved = getUniqueSolvedProblems(recentSubmissions);
+  
+  // 1. Difficulty Alignment Score
+  let difficultyScore = 0;
+  if (solved.length > 0) {
+    let rawScore = 0;
+    for (const sub of solved) {
+      const problemRating = sub.problem.rating || 800;
+      const diff = problemRating - userRating;
+      if (diff >= -200 && diff <= 300) {
+        rawScore += 80 + (diff > 0 ? Math.min(diff / 15, 20) : 0);
+      } else if (diff > 300) {
+        rawScore += 90;
+      } else if (diff < -200) {
+        const penalty = Math.min(Math.abs(diff + 200) / 10, 60);
+        rawScore += Math.max(20, 60 - penalty);
+      }
     }
-    count++;
+    difficultyScore = rawScore / solved.length;
   }
 
-  return Math.round(score / count);
+  // 2. Contest Performance Score
+  let contestScore = 0;
+  if (recentContests.length > 0) {
+    let rawContestScore = 0;
+    for (const contest of recentContests) {
+      const delta = contest.newRating - contest.oldRating;
+      
+      // High rating adjustment curve
+      // At 1200, losing 20 pts is bad. At 3000, losing 20 pts is normal/expected.
+      const highRatingBuffer = Math.max(0, (contest.oldRating - 2000) / 50); // e.g. at 3000, buffer is 20
+      const adjustedDelta = delta + highRatingBuffer;
+
+      if (adjustedDelta > 0) {
+        rawContestScore += Math.min(100, 50 + adjustedDelta * 1.5);
+      } else if (adjustedDelta === 0) {
+        rawContestScore += 50;
+      } else {
+        rawContestScore += Math.max(0, 50 + adjustedDelta); // drops below 50 for negative delta
+      }
+    }
+    contestScore = rawContestScore / recentContests.length;
+  } else {
+    contestScore = 50; // Neutral if no contests
+  }
+
+  // Determine Profile
+  let userProfile: 'practice_focused' | 'contest_specialist' | 'balanced' = 'balanced';
+  if (recentContests.length >= 2 && solved.length < 5) {
+    userProfile = 'contest_specialist';
+  } else if (recentContests.length === 0 && solved.length > 10) {
+    userProfile = 'practice_focused';
+  }
+
+  // Composite Score
+  let finalScore = 0;
+  if (userProfile === 'contest_specialist') {
+    finalScore = (contestScore * 0.8) + (difficultyScore * 0.2);
+  } else if (userProfile === 'practice_focused') {
+    finalScore = (difficultyScore * 0.8) + (contestScore * 0.2);
+  } else {
+    finalScore = (difficultyScore * 0.6) + (contestScore * 0.4);
+  }
+
+  return {
+    score: Math.round(finalScore),
+    contestScore: Math.round(contestScore),
+    userProfile
+  };
+}
+
+// --- Rating Predictor ---
+
+export function predictRatingDelta(
+  submissions: CFSubmission[],
+  ratingHistory: CFRatingChange[],
+  userRating: number,
+  days: number
+): RatingPrediction {
+  const cutoff = Date.now() / 1000 - days * 86400;
+  const recentSubmissions = submissions.filter(s => s.creationTimeSeconds >= cutoff);
+  const recentContests = ratingHistory.filter(c => c.ratingUpdateTimeSeconds >= cutoff);
+  const solved = getUniqueSolvedProblems(recentSubmissions);
+
+  if (solved.length === 0 && recentContests.length === 0) {
+    return { predictedDelta: 0, confidence: 'low', reasoning: 'Not enough recent activity to predict.' };
+  }
+
+  let predictedDelta = 0;
+  let reasons: string[] = [];
+  
+  // Signal 1: Contest momentum
+  if (recentContests.length > 0) {
+    const recentDeltas = recentContests.map(c => c.newRating - c.oldRating);
+    const avgDelta = recentDeltas.reduce((a,b) => a+b, 0) / recentDeltas.length;
+    if (avgDelta > 15) {
+      predictedDelta += 15;
+      reasons.push('Strong positive momentum in recent contests.');
+    } else if (avgDelta > 0) {
+      predictedDelta += 5;
+    } else if (avgDelta < -20) {
+      predictedDelta -= 10;
+      reasons.push('Recent contest performance has been dipping.');
+    }
+  }
+
+  // Signal 2: Practice difficulty
+  if (solved.length > 5) {
+    const ratings = solved.map(s => s.problem.rating || userRating);
+    const avgDiff = ratings.reduce((a,b) => a+b, 0) / ratings.length;
+    
+    if (avgDiff > userRating + 100) {
+      predictedDelta += 20;
+      reasons.push(`Consistently solving problems ~${Math.round(avgDiff - userRating)} points above your rating.`);
+    } else if (avgDiff > userRating) {
+      predictedDelta += 10;
+      reasons.push('Practicing slightly above your current rating.');
+    } else if (avgDiff < userRating - 200) {
+      predictedDelta -= 5;
+      reasons.push('Practice problems are significantly below your rating (comfort zone).');
+    }
+  }
+
+  // Floor at 0 (we don't want to show negative predictions, just "Steady")
+  predictedDelta = Math.max(0, Math.round(predictedDelta));
+
+  let confidence: 'low' | 'medium' | 'high' = 'low';
+  if (recentContests.length >= 2 && solved.length >= 10) confidence = 'high';
+  else if (recentContests.length >= 1 || solved.length >= 5) confidence = 'medium';
+
+  return {
+    predictedDelta,
+    confidence,
+    reasoning: reasons.join(' ') || 'Maintaining current skill level.',
+  };
 }
 
 // --- Full Analytics Summary ---
 
 export function computeAnalytics(
   submissions: CFSubmission[],
+  ratingHistory: CFRatingChange[],
   userInfo: CFUser,
   timeRange: TimeRange
 ): AnalyticsSummary {
@@ -237,6 +357,9 @@ export function computeAnalytics(
   if (recentAvg > olderAvg + 50) ratingTrend = 'rising';
   else if (recentAvg < olderAvg - 50) ratingTrend = 'falling';
 
+  const practiceQuality = computePracticeQuality(filtered, ratingHistory, userInfo.rating, days);
+  const prediction = predictRatingDelta(filtered, ratingHistory, userInfo.rating, days);
+
   return {
     totalSolved: solved.length,
     totalAttempted: filtered.length,
@@ -249,7 +372,10 @@ export function computeAnalytics(
     dailyActivity: computeDailyActivity(filtered, Math.min(days, 365)),
     streak: computeStreak(submissions), // Streak is always computed on all submissions
     ratingTrend,
-    practiceQualityScore: computePracticeQuality(filtered, userInfo.rating),
+    practiceQualityScore: practiceQuality.score,
+    contestPerformanceScore: practiceQuality.contestScore,
+    userProfile: practiceQuality.userProfile,
+    ratingPrediction: prediction,
   };
 }
 

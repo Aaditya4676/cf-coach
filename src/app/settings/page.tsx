@@ -1,14 +1,26 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Key, User, Database, Zap, ExternalLink } from 'lucide-react';
+import { Settings as SettingsIcon, Key, User, Database, Zap, ExternalLink, ShieldCheck } from 'lucide-react';
 
 import { useCFHandle } from '@/hooks/useCFHandle';
+import { getAISettings, saveAISettings, AISettings } from '@/hooks/useAISettings';
+import { AIProvider } from '@/lib/ai-client';
 
 export default function SettingsPage() {
   const { handle: globalHandle, updateHandle } = useCFHandle();
+  
+  // CF Handle
   const [localHandle, setLocalHandle] = useState('');
-  const [geminiKeyConfigured, setGeminiKeyConfigured] = useState(false);
+  
+  // AI Settings
+  const [aiSettings, setAiSettings] = useState<AISettings>({
+    provider: 'gemini',
+    geminiKey: '',
+    openaiKey: '',
+    claudeKey: '',
+  });
+
   const [supabaseConfigured, setSupabaseConfigured] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -16,12 +28,17 @@ export default function SettingsPage() {
     if (globalHandle && globalHandle !== 'tourist') {
       setLocalHandle(globalHandle);
     }
+    // Load AI settings from hook (which reads from localStorage)
+    setAiSettings(getAISettings());
+    
     // Check if env vars are set (can only check public ones on client)
     setSupabaseConfigured(!!process.env.NEXT_PUBLIC_SUPABASE_URL);
   }, [globalHandle]);
 
-  const saveSettings = () => {
+  const saveAllSettings = () => {
     updateHandle(localHandle);
+    saveAISettings(aiSettings);
+    
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -52,6 +69,7 @@ export default function SettingsPage() {
             value={localHandle}
             onChange={(e) => setLocalHandle(e.target.value)}
             placeholder="Your CF handle"
+            className="input-field"
             style={{
               flex: 1,
               padding: '10px 14px',
@@ -63,9 +81,6 @@ export default function SettingsPage() {
               fontFamily: "'JetBrains Mono', monospace",
             }}
           />
-          <button className="btn btn-primary" onClick={saveSettings}>
-            {saved ? '✅ Saved!' : 'Save'}
-          </button>
         </div>
         <div className="text-xs text-muted mt-sm">
           This is used to fetch your profile and submissions from the Codeforces API
@@ -74,27 +89,147 @@ export default function SettingsPage() {
 
       {/* API Configuration Status */}
       <div className="card mb-lg">
-        <div className="card-header">
-          <div className="card-title">
-            <Key size={16} />
-            API Configuration
+        <div className="card-header border-b pb-sm mb-md" style={{ borderColor: 'var(--glass-border)' }}>
+          <div className="card-title flex items-center justify-between w-full">
+            <div className="flex items-center gap-sm">
+              <Key size={16} />
+              AI Provider & Keys
+            </div>
+            <div className="badge badge-emerald flex items-center gap-xs">
+              <ShieldCheck size={12} />
+              Local Storage Only
+            </div>
           </div>
         </div>
 
-        <div className="mb-lg">
-          <div className="flex items-center justify-between mb-sm">
-            <div className="flex items-center gap-sm">
-              <Zap size={14} style={{ color: 'var(--accent-purple)' }} />
-              <span className="font-semibold text-sm">Gemini API Key</span>
+        <div className="text-sm text-muted mb-md">
+          Your API keys are stored securely in your browser's local storage and are sent directly to the AI provider via our proxy. They are never saved to a database.
+        </div>
+
+        <div className="mb-md">
+          <label className="text-xs font-bold text-muted uppercase tracking-wider mb-xs block">
+            Preferred AI Provider
+          </label>
+          <select 
+            value={aiSettings.provider}
+            onChange={(e) => setAiSettings({ ...aiSettings, provider: e.target.value as AIProvider })}
+            style={{
+              width: '100%',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--glass-border)',
+              background: 'var(--bg-input)',
+              color: 'var(--text-primary)',
+              fontSize: 14,
+              marginBottom: 'var(--space-md)'
+            }}
+          >
+            <option value="gemini">Google Gemini (Recommended)</option>
+            <option value="openai">OpenAI (GPT-4o / 3.5)</option>
+            <option value="claude">Anthropic Claude</option>
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-sm">
+          {/* Gemini */}
+          <div>
+            <div className="flex items-center justify-between mb-xs">
+              <span className="text-sm font-semibold">Gemini API Key</span>
+              {aiSettings.geminiKey ? (
+                <span className="text-xs text-emerald-400">Configured</span>
+              ) : (
+                <span className="text-xs text-muted">Optional (Falls back to env)</span>
+              )}
             </div>
-            <span className={`badge ${geminiKeyConfigured ? 'badge-emerald' : 'badge-amber'}`}>
-              {geminiKeyConfigured ? '✅ Configured' : '⚠️ Set in .env.local'}
-            </span>
+            <input
+              type="password"
+              value={aiSettings.geminiKey}
+              onChange={(e) => setAiSettings({ ...aiSettings, geminiKey: e.target.value })}
+              placeholder="AIzaSy..."
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--glass-border)',
+                background: 'var(--bg-input)',
+                color: 'var(--text-primary)',
+                fontFamily: 'monospace',
+                fontSize: 13,
+              }}
+            />
           </div>
-          <div className="text-xs text-muted">
-            Set <code className="font-mono" style={{ color: 'var(--accent-blue)' }}>GEMINI_API_KEY</code> in your{' '}
-            <code className="font-mono" style={{ color: 'var(--accent-blue)' }}>.env.local</code> file
-            (or as a Vercel environment variable)
+
+          {/* OpenAI */}
+          <div>
+            <div className="flex items-center justify-between mb-xs">
+              <span className="text-sm font-semibold">OpenAI API Key</span>
+              {aiSettings.openaiKey ? (
+                <span className="text-xs text-emerald-400">Configured</span>
+              ) : null}
+            </div>
+            <input
+              type="password"
+              value={aiSettings.openaiKey}
+              onChange={(e) => setAiSettings({ ...aiSettings, openaiKey: e.target.value })}
+              placeholder="sk-..."
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--glass-border)',
+                background: 'var(--bg-input)',
+                color: 'var(--text-primary)',
+                fontFamily: 'monospace',
+                fontSize: 13,
+              }}
+            />
+          </div>
+
+          {/* Claude */}
+          <div>
+            <div className="flex items-center justify-between mb-xs">
+              <span className="text-sm font-semibold">Claude API Key</span>
+              {aiSettings.claudeKey ? (
+                <span className="text-xs text-emerald-400">Configured</span>
+              ) : null}
+            </div>
+            <input
+              type="password"
+              value={aiSettings.claudeKey}
+              onChange={(e) => setAiSettings({ ...aiSettings, claudeKey: e.target.value })}
+              placeholder="sk-ant-..."
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--glass-border)',
+                background: 'var(--bg-input)',
+                color: 'var(--text-primary)',
+                fontFamily: 'monospace',
+                fontSize: 13,
+              }}
+            />
+          </div>
+        </div>
+      </div>
+      
+      {/* Save Button */}
+      <div className="flex justify-end mb-xl">
+        <button 
+          className="btn btn-primary" 
+          onClick={saveAllSettings}
+          style={{ padding: '12px 32px', fontSize: 16 }}
+        >
+          {saved ? '✅ Saved Successfully!' : 'Save All Settings'}
+        </button>
+      </div>
+
+      {/* Supabase Status */}
+      <div className="card mb-lg">
+        <div className="card-header">
+          <div className="card-title">
+            <Database size={16} />
+            Cloud Persistence
           </div>
         </div>
 
@@ -110,46 +245,8 @@ export default function SettingsPage() {
           </div>
           <div className="text-xs text-muted">
             Set <code className="font-mono" style={{ color: 'var(--accent-blue)' }}>NEXT_PUBLIC_SUPABASE_URL</code> and{' '}
-            <code className="font-mono" style={{ color: 'var(--accent-blue)' }}>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to enable database persistence
+            <code className="font-mono" style={{ color: 'var(--accent-blue)' }}>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> as environment variables to enable database persistence across devices.
           </div>
-        </div>
-      </div>
-
-      {/* Setup Instructions */}
-      <div className="card mb-lg">
-        <div className="card-header">
-          <div className="card-title">📋 Setup Guide</div>
-        </div>
-        <div style={{ fontSize: 14, lineHeight: 1.8 }}>
-          <p className="mb-md"><strong>1. Get a Gemini API Key</strong></p>
-          <p className="text-muted mb-md" style={{ paddingLeft: 16 }}>
-            Visit{' '}
-            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="flex items-center gap-xs" style={{ display: 'inline-flex' }}>
-              Google AI Studio <ExternalLink size={12} />
-            </a>{' '}
-            → Create an API key → Add it to <code className="font-mono" style={{ color: 'var(--accent-blue)' }}>.env.local</code>
-          </p>
-
-          <p className="mb-md"><strong>2. Create <code className="font-mono">.env.local</code></strong></p>
-          <pre style={{
-            padding: 'var(--space-md)',
-            background: 'var(--bg-input)',
-            borderRadius: 'var(--radius-md)',
-            fontSize: 13,
-            marginBottom: 'var(--space-md)',
-            overflowX: 'auto',
-          }}>
-{`GEMINI_API_KEY=your_gemini_api_key_here
-
-# Optional: Supabase (for persistent storage)
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key`}
-          </pre>
-
-          <p className="mb-md"><strong>3. Deploy to Vercel</strong></p>
-          <p className="text-muted" style={{ paddingLeft: 16 }}>
-            Push to GitHub → Import to Vercel → Add environment variables in Vercel dashboard
-          </p>
         </div>
       </div>
 
@@ -165,7 +262,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key`}
             interleaving, and Bjork&apos;s desirable difficulties framework.
           </p>
           <p className="mt-md">
-            Built with Next.js, Gemini AI, Recharts, and Supabase.
+            Built with Next.js, Multi-Provider AI (Gemini, OpenAI, Claude), Recharts, and Supabase.
           </p>
         </div>
       </div>

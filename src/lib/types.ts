@@ -140,6 +140,15 @@ export interface AnalyticsSummary {
   streak: StreakInfo;
   ratingTrend: 'rising' | 'falling' | 'stagnant';
   practiceQualityScore: number; // 0-100
+  contestPerformanceScore?: number; // 0-100
+  userProfile?: 'practice_focused' | 'contest_specialist' | 'balanced';
+  ratingPrediction?: RatingPrediction;
+}
+
+export interface RatingPrediction {
+  predictedDelta: number; // e.g. +15, +0
+  confidence: 'low' | 'medium' | 'high';
+  reasoning: string;
 }
 
 // --- Difficulty Trend (new) ---
