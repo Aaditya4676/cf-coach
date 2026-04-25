@@ -21,10 +21,10 @@ export default function QuestsPage() {
     }
   }, [isReady, needsSetup, router]);
 
-  const loadData = () => {
+  const loadData = async () => {
     if (!handle) return;
-    setProfile(getVirtualProfile(handle));
-    setQuests(getQuests(handle));
+    setProfile(await getVirtualProfile(handle));
+    setQuests(await getQuests(handle));
   };
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export default function QuestsPage() {
       let newFailed = 0;
       
       // Update quests array
-      const allQuests = getQuests(handle);
+      const allQuests = await getQuests(handle);
       const updatedQuests = allQuests.map(q => {
         const assessment = results.find((r: any) => r.questId === q.id);
         if (assessment) {
@@ -87,7 +87,7 @@ export default function QuestsPage() {
         return q;
       });
 
-      saveQuests(handle, updatedQuests);
+      await saveQuests(handle, updatedQuests);
       
       if (newCompleted > 0 || newFailed > 0) {
         setAssessmentResult({ completed: newCompleted, failed: newFailed });

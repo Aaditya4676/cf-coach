@@ -37,8 +37,7 @@ export function Sidebar() {
 
   useEffect(() => {
     if (handle) {
-      const profile = getVirtualProfile(handle);
-      setLevel(profile.level);
+      getVirtualProfile(handle).then(profile => setLevel(profile.level));
     }
   }, [handle]);
 

@@ -59,7 +59,7 @@ export default function MentorPage() {
       setCached(data.cached);
 
       if (!data.cached && handle) {
-        convertActionItemsToQuests(handle, newAnalysis.actionItems);
+        await convertActionItemsToQuests(handle, newAnalysis.actionItems);
         setQuestsGenerated(true);
       } else {
         setQuestsGenerated(false);

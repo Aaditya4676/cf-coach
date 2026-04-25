@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useCFHandle } from '@/hooks/useCFHandle';
 import { SolveSession, getSolveSessions, saveSolveSession, getActiveSession } from '@/lib/practice-timer';
 import { Timer, Play, Square, CheckCircle2, XCircle, Loader2, Target, BarChart3 } from 'lucide-react';
 import { getUserSubmissions } from '@/lib/codeforces';
 import { CFProblem } from '@/lib/types';
+import PracticeAnalytics from '@/components/PracticeAnalytics';
 
 function formatTime(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -47,12 +48,16 @@ export default function PracticePage() {
   // Load data
   useEffect(() => {
     if (handle) {
-      setSessions(getSolveSessions(handle));
-      const active = getActiveSession(handle);
-      if (active) {
-        setActiveSession(active);
-        setUrlInput(active.problemUrl);
-      }
+      const loadData = async () => {
+        const loadedSessions = await getSolveSessions(handle);
+        setSessions(loadedSessions);
+        const active = await getActiveSession(handle);
+        if (active) {
+          setActiveSession(active);
+          setUrlInput(active.problemUrl);
+        }
+      };
+      loadData();
     }
   }, [handle]);
 
@@ -72,54 +77,47 @@ export default function PracticePage() {
     };
   }, [activeSession]);
 
+  const checkSubmissions = useCallback(async () => {
+    if (!handle || !activeSession || activeSession.status !== 'active') return;
+    setIsPolling(true);
+    try {
+      const subs = await getUserSubmissions(handle, 1, 20);
+      const startTimeSec = Math.floor(new Date(activeSession.startTime).getTime() / 1000);
+      
+      const solved = subs.find(s => 
+        s.verdict === 'OK' && 
+        s.creationTimeSeconds >= startTimeSec &&
+        (activeSession.problemUrl.includes(s.problem.contestId.toString()) || 
+         activeSession.problemUrl.includes(s.problem.index))
+      );
+
+      if (solved) {
+        const duration = Math.floor((solved.creationTimeSeconds * 1000 - new Date(activeSession.startTime).getTime()) / 1000);
+        
+        const completedSession: SolveSession = {
+          ...activeSession,
+          status: 'completed',
+          endTime: new Date(solved.creationTimeSeconds * 1000).toISOString(),
+          durationSeconds: duration,
+          problemInfo: solved.problem
+        };
+        
+        await saveSolveSession(completedSession);
+        setActiveSession(null);
+        setUrlInput('');
+        setSessions(await getSolveSessions(handle));
+      }
+    } catch (err) {
+      console.error('Polling error', err);
+    } finally {
+      setIsPolling(false);
+    }
+  }, [handle, activeSession]);
+
   // Polling loop
   useEffect(() => {
     let pollInterval: NodeJS.Timeout;
     
-    const checkSubmissions = async () => {
-      if (!handle || !activeSession || activeSession.status !== 'active') return;
-      setIsPolling(true);
-      try {
-        const subs = await getUserSubmissions(handle, 1, 20);
-        const startTimeSec = Math.floor(new Date(activeSession.startTime).getTime() / 1000);
-        
-        // Look for an 'OK' submission that happened AFTER start time
-        // Note: For a robust implementation, we should extract contestId and index from URL
-        // and match it against the submission.
-        // For simplicity, we just look for the first OK submission since start.
-        
-        const solved = subs.find(s => 
-          s.verdict === 'OK' && 
-          s.creationTimeSeconds >= startTimeSec &&
-          // Basic heuristic: URL contains contestId and index
-          (activeSession.problemUrl.includes(s.problem.contestId.toString()) || 
-           activeSession.problemUrl.includes(s.problem.index))
-        );
-
-        if (solved) {
-          // Solved!
-          const duration = Math.floor((solved.creationTimeSeconds * 1000 - new Date(activeSession.startTime).getTime()) / 1000);
-          
-          const completedSession: SolveSession = {
-            ...activeSession,
-            status: 'completed',
-            endTime: new Date(solved.creationTimeSeconds * 1000).toISOString(),
-            durationSeconds: duration,
-            problemInfo: solved.problem
-          };
-          
-          saveSolveSession(completedSession);
-          setActiveSession(null);
-          setUrlInput('');
-          setSessions(getSolveSessions(handle));
-        }
-      } catch (err) {
-        console.error('Polling error', err);
-      } finally {
-        setIsPolling(false);
-      }
-    };
-
     if (activeSession && activeSession.status === 'active') {
       // Poll every 15 seconds
       pollInterval = setInterval(checkSubmissions, 15000);
@@ -128,7 +126,7 @@ export default function PracticePage() {
     return () => {
       if (pollInterval) clearInterval(pollInterval);
     };
-  }, [activeSession, handle]);
+  }, [activeSession, checkSubmissions]);
 
   const verifyProblem = async () => {
     const parsed = parseProblemInput(urlInput);
@@ -153,7 +151,7 @@ export default function PracticePage() {
     }
   };
 
-  const startPractice = () => {
+  const startPractice = async () => {
     if (!handle || !urlInput.trim() || activeSession) return;
     
     const newSession: SolveSession = {
@@ -165,12 +163,12 @@ export default function PracticePage() {
       status: 'active'
     };
     
-    saveSolveSession(newSession);
+    await saveSolveSession(newSession);
     setActiveSession(newSession);
-    setSessions(getSolveSessions(handle));
+    setSessions(await getSolveSessions(handle));
   };
 
-  const abandonPractice = () => {
+  const abandonPractice = async () => {
     if (!activeSession) return;
     
     const abandoned: SolveSession = {
@@ -180,10 +178,10 @@ export default function PracticePage() {
       durationSeconds: elapsed
     };
     
-    saveSolveSession(abandoned);
+    await saveSolveSession(abandoned);
     setActiveSession(null);
     setUrlInput('');
-    setSessions(getSolveSessions(handle));
+    setSessions(await getSolveSessions(handle));
   };
 
   const completed = sessions.filter(s => s.status === 'completed');
@@ -270,9 +268,18 @@ export default function PracticePage() {
                   <Square fill="currentColor" size={16} /> Abandon
                 </button>
               </div>
-              <div className="mt-xl text-xs text-muted flex items-center justify-center gap-xs">
-                {isPolling ? <Loader2 size={12} className="spinner" /> : <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
-                Auto-polling Codeforces for your solution...
+              <div className="mt-xl text-xs text-muted flex flex-col items-center gap-sm">
+                <div className="flex items-center justify-center gap-xs">
+                  {isPolling ? <Loader2 size={12} className="spinner" /> : <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
+                  Auto-polling Codeforces for your solution...
+                </div>
+                <button 
+                  onClick={checkSubmissions}
+                  disabled={isPolling}
+                  className="btn btn-secondary text-xs py-1 px-3 flex items-center gap-xs"
+                >
+                  {isPolling ? <Loader2 size={10} className="spinner" /> : <CheckCircle2 size={10} />} Check Now
+                </button>
               </div>
             </div>
           )}
@@ -332,6 +339,19 @@ export default function PracticePage() {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="mt-2xl">
+        <div className="section-header">
+          <h2 className="section-title flex items-center gap-sm">
+            <BarChart3 size={24} className="text-accent-purple" />
+            Performance Insights
+          </h2>
+          <p className="section-description">
+            Detailed breakdown of your solving speed and consistency.
+          </p>
+        </div>
+        <PracticeAnalytics sessions={sessions} />
       </div>
     </div>
   );
