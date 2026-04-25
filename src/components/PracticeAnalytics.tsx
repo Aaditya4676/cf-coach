@@ -22,7 +22,7 @@ type DvSMode = 'scatter' | 'bar' | 'line';
 
 interface DvSProps {
   scatterData: { rating: number; minutes: number; name: string }[];
-  ratingData: { rating: string; avgMinutes: number; count: number }[];
+  ratingData: { rating: string; avgMinutes: number; medianMinutes: number; count: number }[];
 }
 
 function DifficultySpeedPanel({ scatterData, ratingData }: DvSProps) {
@@ -95,10 +95,9 @@ function DifficultySpeedPanel({ scatterData, ratingData }: DvSProps) {
               <YAxis stroke="#ffffff60" fontSize={10} tickLine={false} axisLine={false}
                 label={{ value: 'Min', angle: -90, position: 'insideLeft', fill: '#ffffff40', fontSize: 10 }} />
               <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: '#fff', fontWeight: 700 }}
-                formatter={(v: any) => [`${v} min avg`, 'Avg Time']} />
-              <Bar dataKey="avgMinutes" radius={[6, 6, 0, 0]}>
-                {ratingData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-              </Bar>
+                formatter={(v: any, name: any) => [`${v} min`, name === 'avgMinutes' ? 'Avg Time' : 'Median Time']} />
+              <Bar dataKey="medianMinutes" name="Median Time" fill="#06b6d4" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="avgMinutes" name="Avg Time" fill="#f59e0b" radius={[6, 6, 0, 0]} />
             </BarChart>
           ) : (
             <LineChart data={ratingData}>
@@ -106,8 +105,11 @@ function DifficultySpeedPanel({ scatterData, ratingData }: DvSProps) {
               <XAxis dataKey="rating" stroke="#ffffff60" fontSize={11} tickLine={false} axisLine={false} />
               <YAxis stroke="#ffffff60" fontSize={10} tickLine={false} axisLine={false}
                 label={{ value: 'Min', angle: -90, position: 'insideLeft', fill: '#ffffff40', fontSize: 10 }} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: any) => [`${v} min`, 'Avg Time']} />
-              <Line type="monotone" dataKey="avgMinutes" stroke="#f59e0b" strokeWidth={2.5}
+              <Tooltip contentStyle={tooltipStyle} formatter={(v: any, name: any) => [`${v} min`, name === 'avgMinutes' ? 'Avg Time' : 'Median Time']} />
+              <Line type="monotone" dataKey="medianMinutes" name="Median Time" stroke="#06b6d4" strokeWidth={2.5}
+                dot={{ r: 5, fill: '#06b6d4', stroke: '#0d1117', strokeWidth: 2 }}
+                activeDot={{ r: 7, fill: '#06b6d4' }} />
+              <Line type="monotone" dataKey="avgMinutes" name="Avg Time" stroke="#f59e0b" strokeWidth={2.5}
                 dot={{ r: 5, fill: '#f59e0b', stroke: '#0d1117', strokeWidth: 2 }}
                 activeDot={{ r: 7, fill: '#f59e0b' }} />
             </LineChart>
@@ -178,11 +180,13 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
       : 0;
     const consistencyPct = avgTime > 0 ? Math.max(0, Math.round(100 - (stdDev / avgTime) * 100)) : 0;
 
-    // Improvement rate: compare first half avg vs second half avg (negative = faster = better)
+    // Improvement rate: compare first half median vs second half median (negative = faster = better)
     const half = Math.floor(durations.length / 2);
-    const firstHalfAvg = half > 0 ? durations.slice(0, half).reduce((a, b) => a + b, 0) / half : 0;
-    const secondHalfAvg = half > 0 ? durations.slice(half).reduce((a, b) => a + b, 0) / (durations.length - half) : 0;
-    const improvementRate = half > 0 ? Math.round(((firstHalfAvg - secondHalfAvg) / firstHalfAvg) * 100) : 0;
+    const firstHalfSorted = durations.slice(0, half).sort((a, b) => a - b);
+    const secondHalfSorted = durations.slice(half).sort((a, b) => a - b);
+    const firstHalfMed = half > 0 ? firstHalfSorted[Math.floor(firstHalfSorted.length / 2)] : 0;
+    const secondHalfMed = half > 0 ? secondHalfSorted[Math.floor(secondHalfSorted.length / 2)] : 0;
+    const improvementRate = half > 0 && firstHalfMed > 0 ? Math.round(((firstHalfMed - secondHalfMed) / firstHalfMed) * 100) : 0;
 
     return {
       totalSolves: completedSessions.length,
@@ -203,25 +207,31 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
 
   // --- Rating Bucket Data ---
   const ratingData = useMemo(() => {
-    const map = new Map<number, { sum: number, count: number }>();
+    const map = new Map<number, { durations: number[], count: number }>();
     
     completedSessions.forEach(s => {
       const rating = s.problemInfo?.rating || 0;
       if (rating === 0) return;
       
-      const current = map.get(rating) || { sum: 0, count: 0 };
+      const current = map.get(rating) || { durations: [], count: 0 };
       map.set(rating, {
-        sum: current.sum + (s.durationSeconds || 0),
+        durations: [...current.durations, s.durationSeconds || 0],
         count: current.count + 1
       });
     });
 
     return Array.from(map.entries())
-      .map(([rating, { sum, count }]) => ({
-        rating: String(rating),
-        avgMinutes: Number((sum / count / 60).toFixed(1)),
-        count
-      }))
+      .map(([rating, { durations, count }]) => {
+        const avgSec = durations.reduce((a, b) => a + b, 0) / count;
+        const sorted = [...durations].sort((a, b) => a - b);
+        const medianSec = sorted[Math.floor(sorted.length / 2)];
+        return {
+          rating: String(rating),
+          avgMinutes: Number((avgSec / 60).toFixed(1)),
+          medianMinutes: Number((medianSec / 60).toFixed(1)),
+          count
+        };
+      })
       .sort((a, b) => Number(a.rating) - Number(b.rating));
   }, [completedSessions]);
 
@@ -247,24 +257,30 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
 
   // --- Tag Performance ---
   const tagData = useMemo(() => {
-    const map = new Map<string, { sum: number, count: number }>();
+    const map = new Map<string, { durations: number[], count: number }>();
     
     completedSessions.forEach(s => {
       s.problemInfo?.tags?.forEach(tag => {
-        const current = map.get(tag) || { sum: 0, count: 0 };
+        const current = map.get(tag) || { durations: [], count: 0 };
         map.set(tag, {
-          sum: current.sum + (s.durationSeconds || 0),
+          durations: [...current.durations, s.durationSeconds || 0],
           count: current.count + 1
         });
       });
     });
 
     return Array.from(map.entries())
-      .map(([tag, { sum, count }]) => ({
-        tag,
-        avgMinutes: Number((sum / count / 60).toFixed(1)),
-        count
-      }))
+      .map(([tag, { durations, count }]) => {
+        const avgSec = durations.reduce((a, b) => a + b, 0) / count;
+        const sorted = [...durations].sort((a, b) => a - b);
+        const medianSec = sorted[Math.floor(sorted.length / 2)];
+        return {
+          tag,
+          avgMinutes: Number((avgSec / 60).toFixed(1)),
+          medianMinutes: Number((medianSec / 60).toFixed(1)),
+          count
+        };
+      })
       .sort((a, b) => b.count - a.count)
       .slice(0, 8);
   }, [completedSessions]);
@@ -432,7 +448,7 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
           <div className="card" style={{ padding: 'var(--space-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', marginBottom: 'var(--space-md)' }}>
               <Target size={16} style={{ color: 'var(--accent-cyan)' }} />
-              <h3 style={{ fontSize: 14, fontWeight: 600 }}>Avg Solve Time by Rating</h3>
+              <h3 style={{ fontSize: 14, fontWeight: 600 }}>Avg & Median Solve Time by Rating</h3>
             </div>
             <div style={{ width: '100%', height: 250 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -456,13 +472,10 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
                     contentStyle={{ background: '#0d1117', border: '1px solid #ffffff20', borderRadius: 8, fontSize: 12 }}
                     labelStyle={{ color: '#ffffff', fontWeight: 700 }}
                     itemStyle={{ color: '#06b6d4' }}
-                    formatter={(value: any) => [`${value} min`, 'Avg Time']}
+                    formatter={(v: any, name: any) => [`${v} min`, name === 'avgMinutes' ? 'Avg Time' : 'Median Time']}
                   />
-                  <Bar dataKey="avgMinutes" name="Avg Time" radius={[6, 6, 0, 0]}>
-                    {ratingData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Bar>
+                  <Bar dataKey="medianMinutes" name="Median Time" fill="#06b6d4" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="avgMinutes" name="Avg Time" fill="#f59e0b" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -574,9 +587,9 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
           <div className="card" style={{ padding: 'var(--space-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', marginBottom: 'var(--space-md)' }}>
               <Zap size={16} style={{ color: 'var(--accent-purple)' }} />
-              <h3 style={{ fontSize: 14, fontWeight: 600 }}>Top Tags — Avg Solve Time</h3>
+              <h3 style={{ fontSize: 14, fontWeight: 600 }}>Top Tags — Time Profile</h3>
             </div>
-            <div style={{ width: '100%', height: Math.max(200, tagData.length * 38) }}>
+            <div style={{ width: '100%', height: Math.max(200, tagData.length * 48) }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={tagData} layout="vertical" margin={{ left: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" horizontal={false} />
@@ -599,13 +612,10 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
                   />
                   <Tooltip 
                     contentStyle={{ background: '#0d1117', border: '1px solid #ffffff20', borderRadius: 8, fontSize: 12 }}
-                    formatter={(value: any) => [`${value} min`, 'Avg Time']}
+                    formatter={(v: any, name: any) => [`${v} min`, name === 'avgMinutes' ? 'Avg Time' : 'Median Time']}
                   />
-                  <Bar dataKey="avgMinutes" name="Avg Time" radius={[0, 6, 6, 0]} barSize={22}>
-                    {tagData.map((_, index) => (
-                      <Cell key={`tag-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Bar>
+                  <Bar dataKey="medianMinutes" name="Median Time" fill="#06b6d4" radius={[0, 6, 6, 0]} barSize={12} />
+                  <Bar dataKey="avgMinutes" name="Avg Time" fill="#f59e0b" radius={[0, 6, 6, 0]} barSize={12} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
