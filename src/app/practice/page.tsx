@@ -87,12 +87,13 @@ export default function PracticePage() {
       const solved = subs.find(s => 
         s.verdict === 'OK' && 
         s.creationTimeSeconds >= startTimeSec &&
-        (activeSession.problemUrl.includes(s.problem.contestId.toString()) || 
-         activeSession.problemUrl.includes(s.problem.index))
+        activeSession.problemUrl.includes(s.problem.contestId.toString()) && 
+        activeSession.problemUrl.includes(s.problem.index)
       );
 
       if (solved) {
-        const duration = Math.floor((solved.creationTimeSeconds * 1000 - new Date(activeSession.startTime).getTime()) / 1000);
+        // Calculate duration using purely local time to avoid clock skew issues between PC and CF servers
+        const duration = Math.floor((Date.now() - new Date(activeSession.startTime).getTime()) / 1000);
         
         const completedSession: SolveSession = {
           ...activeSession,
