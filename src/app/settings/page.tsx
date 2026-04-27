@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Key, User, Database, Zap, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Settings as SettingsIcon, Key, User, Database, Zap, ExternalLink, ShieldCheck, Upload, Loader2, CheckCircle2 } from 'lucide-react';
 
 import { useCFHandle } from '@/hooks/useCFHandle';
 import { getAISettings, saveAISettings, AISettings } from '@/hooks/useAISettings';
 import { AIProvider } from '@/lib/ai-client';
+import { migrateLocalStorageToSupabase, MigrationResult } from '@/lib/migrate-to-supabase';
 
 export default function SettingsPage() {
   const { handle: globalHandle, updateHandle } = useCFHandle();
@@ -23,6 +24,10 @@ export default function SettingsPage() {
 
   const [supabaseConfigured, setSupabaseConfigured] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Migration state
+  const [migrating, setMigrating] = useState(false);
+  const [migrationResult, setMigrationResult] = useState<MigrationResult | null>(null);
 
   useEffect(() => {
     if (globalHandle && globalHandle !== 'tourist') {
@@ -243,10 +248,74 @@ export default function SettingsPage() {
               {supabaseConfigured ? '✅ Connected' : '📦 Using localStorage'}
             </span>
           </div>
-          <div className="text-xs text-muted">
+          <div className="text-xs text-muted mb-md">
             Set <code className="font-mono" style={{ color: 'var(--accent-blue)' }}>NEXT_PUBLIC_SUPABASE_URL</code> and{' '}
             <code className="font-mono" style={{ color: 'var(--accent-blue)' }}>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> as environment variables to enable database persistence across devices.
           </div>
+
+          {supabaseConfigured && (
+            <div className="mt-md p-md rounded border" style={{ borderColor: 'var(--glass-border)', background: 'var(--bg-card)' }}>
+              <div className="flex items-center justify-between mb-sm">
+                <div>
+                  <div className="text-sm font-semibold">Sync Local Data → Cloud</div>
+                  <div className="text-xs text-muted">Push your existing browser data to Supabase so it&apos;s accessible on all devices.</div>
+                </div>
+                <button
+                  className="btn btn-primary flex items-center gap-sm"
+                  disabled={migrating}
+                  onClick={async () => {
+                    if (!globalHandle || globalHandle === 'tourist') {
+                      setMigrationResult({ success: false, migrated: { sessions: 0, quests: 0, analyses: 0, progress: 0, ladders: 0, reviews: 0, memory: 0, profile: false }, errors: ['Set your CF handle first'] });
+                      return;
+                    }
+                    setMigrating(true);
+                    setMigrationResult(null);
+                    try {
+                      const res = await migrateLocalStorageToSupabase(globalHandle);
+                      setMigrationResult(res);
+                    } catch (err: any) {
+                      setMigrationResult({ success: false, migrated: { sessions: 0, quests: 0, analyses: 0, progress: 0, ladders: 0, reviews: 0, memory: 0, profile: false }, errors: [err.message] });
+                    } finally {
+                      setMigrating(false);
+                    }
+                  }}
+                  style={{ padding: '8px 16px', fontSize: 13 }}
+                >
+                  {migrating ? <Loader2 size={14} className="spinner" /> : <Upload size={14} />}
+                  {migrating ? 'Syncing...' : 'Sync Now'}
+                </button>
+              </div>
+
+              {migrationResult && (
+                <div className={`mt-sm p-sm rounded text-xs ${
+                  migrationResult.success
+                    ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+                    : migrationResult.errors.length > 0 && Object.values(migrationResult.migrated).some(v => v)
+                      ? 'bg-amber-500/10 border border-amber-500/20 text-amber-400'
+                      : 'bg-red-500/10 border border-red-500/20 text-red-400'
+                }`}>
+                  {migrationResult.success ? (
+                    <div className="flex items-center gap-xs mb-xs">
+                      <CheckCircle2 size={12} /> Migration complete!
+                    </div>
+                  ) : migrationResult.errors.length > 0 ? (
+                    <div className="mb-xs">
+                      {migrationResult.errors.map((e, i) => <div key={i}>⚠️ {e}</div>)}
+                    </div>
+                  ) : null}
+                  <div className="flex flex-wrap gap-sm mt-xs text-muted">
+                    <span>Sessions: {migrationResult.migrated.sessions}</span>
+                    <span>Quests: {migrationResult.migrated.quests}</span>
+                    <span>Ladders: {migrationResult.migrated.ladders}</span>
+                    <span>Reviews: {migrationResult.migrated.reviews}</span>
+                    <span>Progress: {migrationResult.migrated.progress}</span>
+                    <span>Analyses: {migrationResult.migrated.analyses}</span>
+                    <span>Memory: {migrationResult.migrated.memory}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
