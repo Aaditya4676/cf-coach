@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useCFHandle } from '@/hooks/useCFHandle';
-import { SolveSession, getSolveSessions, saveSolveSession, getActiveSession } from '@/lib/practice-timer';
+import { SolveSession, getSolveSessions, saveSolveSession, getActiveSession, hasRecentCompletion } from '@/lib/practice-timer';
 import { Timer, Play, Square, CheckCircle2, XCircle, Loader2, Target } from 'lucide-react';
 import { getUserSubmissions } from '@/lib/codeforces';
 import { CFProblem } from '@/lib/types';
@@ -92,6 +92,24 @@ export default function PracticePage() {
       );
 
       if (solved) {
+        // Guard: check if this problem was already completed for this session
+        // (prevents duplicate entries on page refresh)
+        const isDuplicate = await hasRecentCompletion(handle, activeSession.problemUrl, activeSession.startTime);
+        if (isDuplicate) {
+          console.warn('Duplicate completion detected, abandoning stale active session');
+          const abandoned: SolveSession = {
+            ...activeSession,
+            status: 'abandoned',
+            endTime: new Date().toISOString(),
+            durationSeconds: elapsed,
+          };
+          await saveSolveSession(abandoned);
+          setActiveSession(null);
+          setUrlInput('');
+          setSessions(await getSolveSessions(handle));
+          return;
+        }
+
         // Calculate duration using purely local time to avoid clock skew issues between PC and CF servers
         const duration = Math.floor((Date.now() - new Date(activeSession.startTime).getTime()) / 1000);
         
