@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import { SolveSession } from '@/lib/practice-timer';
 import { BarChart3, TrendingUp, Clock, Target, Zap, Activity, Award, Flame, Brain, Gauge, TrendingDown } from 'lucide-react';
+import SpeedLandscape3D from './SpeedLandscape3D';
 
 interface PracticeAnalyticsProps {
   sessions: SolveSession[];
@@ -21,7 +22,7 @@ const COLORS = [
 type DvSMode = 'scatter' | 'bar' | 'line';
 
 interface DvSProps {
-  scatterData: { rating: number; minutes: number; name: string }[];
+  scatterData: { rating: number; minutes: number; name: string; date: string; timestamp: number }[];
   ratingData: { rating: string; avgMinutes: number; medianMinutes: number; count: number }[];
 }
 
@@ -334,7 +335,9 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
       .map(s => ({
         rating: s.problemInfo!.rating!,
         minutes: Number(((s.durationSeconds || 0) / 60).toFixed(1)),
-        name: s.problemInfo?.name || 'Problem'
+        name: s.problemInfo?.name || 'Problem',
+        date: new Date(s.startTime).toISOString(),
+        timestamp: new Date(s.startTime).getTime(),
       }));
   }, [completedSessions]);
 
@@ -579,6 +582,22 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
           </div>
         )}
       </div>
+
+      {/* 3D Speed Landscape — dedicated full-width card */}
+      {scatterData.length >= 3 && (
+        <div className="card" style={{ padding: 'var(--space-lg)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+            <span style={{ fontSize: 20 }}>🌌</span>
+            <h3 style={{ fontSize: 16, fontWeight: 700 }}>3D Speed Landscape</h3>
+          </div>
+          <p className="text-muted text-xs" style={{ marginBottom: 'var(--space-md)' }}>
+            Visualize how your solve time evolves across dates and difficulty ratings. Drag to rotate, scroll to zoom.
+          </p>
+          <div style={{ width: '100%', height: 500, borderRadius: 8, overflow: 'hidden' }}>
+            <SpeedLandscape3D data={scatterData} />
+          </div>
+        </div>
+      )}
 
       {/* Charts Row 3: Tags + Daily Activity */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'var(--space-lg)' }}>
