@@ -661,15 +661,16 @@ tr:hover td {
 
 .heatmap-cell:hover {
   transform: scale(1.5);
-  box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 0 8px rgba(0, 128, 0, 0.5);
 }
 
-.heatmap-0 { background: rgba(59, 130, 246, 0.05); }
-.heatmap-1 { background: rgba(59, 130, 246, 0.2); }
-.heatmap-2 { background: rgba(59, 130, 246, 0.4); }
-.heatmap-3 { background: rgba(59, 130, 246, 0.6); }
-.heatmap-4 { background: rgba(59, 130, 246, 0.8); }
-.heatmap-5 { background: var(--accent-blue); }
+/* CF green activity palette (GitHub-style) */
+.heatmap-0 { background: rgba(0, 128, 0, 0.06); }
+.heatmap-1 { background: rgba(0, 128, 0, 0.22); }
+.heatmap-2 { background: rgba(0, 128, 0, 0.42); }
+.heatmap-3 { background: rgba(0, 128, 0, 0.62); }
+.heatmap-4 { background: rgba(0, 128, 0, 0.82); }
+.heatmap-5 { background: #008000; }
 
 /* --- Mentor Verdict --- */
 .verdict-card {
@@ -855,24 +856,26 @@ tr:hover td {
   border-color: var(--accent-emerald);
 }
 
-/* --- Difficulty Colors --- */
-.diff-800 { color: #808080; }
-.diff-900 { color: #808080; }
-.diff-1000 { color: #008000; }
-.diff-1100 { color: #008000; }
-.diff-1200 { color: #03a89e; }
-.diff-1300 { color: #03a89e; }
-.diff-1400 { color: #4444ff; }
-.diff-1500 { color: #4444ff; }
-.diff-1600 { color: #4444ff; }
-.diff-1700 { color: #aa00aa; }
-.diff-1800 { color: #aa00aa; }
-.diff-1900 { color: #aa00aa; }
-.diff-2000 { color: #ff8c00; }
-.diff-2100 { color: #ff8c00; }
-.diff-2200 { color: #ff8c00; }
-.diff-2300 { color: #ff0000; }
-.diff-2400 { color: #ff0000; }
+/* Codeforces official difficulty color palette */
+.diff-800  { color: #808080; } /* Newbie */
+.diff-900  { color: #808080; }
+.diff-1000 { color: #808080; }
+.diff-1100 { color: #808080; }
+.diff-1200 { color: #008000; } /* Pupil */
+.diff-1300 { color: #008000; }
+.diff-1400 { color: #03A89E; } /* Specialist */
+.diff-1500 { color: #03A89E; }
+.diff-1600 { color: #0000FF; } /* Expert */
+.diff-1700 { color: #0000FF; }
+.diff-1800 { color: #0000FF; }
+.diff-1900 { color: #AA00AA; } /* Candidate Master */
+.diff-2000 { color: #AA00AA; }
+.diff-2100 { color: #FF8C00; } /* Master */
+.diff-2200 { color: #FF8C00; }
+.diff-2300 { color: #FF8C00; } /* Intl. Master */
+.diff-2400 { color: #FF3333; } /* Grandmaster */
+.diff-2600 { color: #CC0000; } /* Intl. Grandmaster */
+.diff-3000 { color: #AA0000; } /* Legendary Grandmaster */
 
 /* --- Animations --- */
 @keyframes fade-in {

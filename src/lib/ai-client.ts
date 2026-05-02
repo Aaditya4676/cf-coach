@@ -41,7 +41,7 @@ async function callGeminiProvider<T>(prompt: string, apiKey: string): Promise<T>
         generationConfig: {
           temperature: 0.7,
           topP: 0.95,
-          maxOutputTokens: 8192,
+          maxOutputTokens: 16384,
           responseMimeType: 'application/json',
         },
       });
@@ -179,7 +179,21 @@ function parseAIResponse<T>(text: string): T {
   try {
     return JSON.parse(cleaned) as T;
   } catch (parseErr) {
-    console.error('[AI] JSON parse failed:', cleaned.slice(0, 300));
+    // Attempt to recover a truncated JSON array by closing it at the last
+    // complete element. This happens when the model hits its token limit.
+    if (cleaned.startsWith('[')) {
+      const lastComma = cleaned.lastIndexOf('},');
+      if (lastComma !== -1) {
+        const recovered = cleaned.slice(0, lastComma + 1) + ']';
+        try {
+          console.warn('[AI] Recovering truncated JSON array, partial result may be returned.');
+          return JSON.parse(recovered) as T;
+        } catch {
+          // recovery failed, fall through to error
+        }
+      }
+    }
+    console.error('[AI] JSON parse failed. First 500 chars:', cleaned.slice(0, 500));
     throw new Error(`AI response was not valid JSON: ${(parseErr as Error).message}`);
   }
 }

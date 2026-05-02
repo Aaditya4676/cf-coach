@@ -17,22 +17,28 @@ interface RatingChartProps {
   ratingHistory: CFRatingChange[];
 }
 
-// Rating tier boundaries
+// Codeforces official rating color palette
 const RATING_TIERS = [
-  { value: 1200, label: 'Pupil', color: '#008000' },
-  { value: 1400, label: 'Specialist', color: '#03a89e' },
-  { value: 1600, label: 'Expert', color: '#4444ff' },
-  { value: 1900, label: 'CM', color: '#aa00aa' },
+  { value: 1200, label: 'Pupil',       color: '#008000' },
+  { value: 1400, label: 'Specialist',  color: '#03A89E' },
+  { value: 1600, label: 'Expert',      color: '#0000FF' },
+  { value: 1900, label: 'Cand. Master', color: '#AA00AA' },
+  { value: 2100, label: 'Master',      color: '#FF8C00' },
+  { value: 2400, label: 'Grandmaster', color: '#FF3333' },
+  { value: 2600, label: 'Intl. GM',   color: '#CC0000' },
 ];
 
 function getRatingColor(rating: number): string {
-  if (rating >= 2400) return '#ff0000';
-  if (rating >= 2100) return '#ff8c00';
-  if (rating >= 1900) return '#aa00aa';
-  if (rating >= 1600) return '#4444ff';
-  if (rating >= 1400) return '#03a89e';
-  if (rating >= 1200) return '#008000';
-  return '#808080';
+  if (rating >= 3000) return '#AA0000'; // Legendary Grandmaster
+  if (rating >= 2600) return '#CC0000'; // International Grandmaster
+  if (rating >= 2400) return '#FF3333'; // Grandmaster
+  if (rating >= 2300) return '#FF8C00'; // International Master
+  if (rating >= 2100) return '#FF8C00'; // Master
+  if (rating >= 1900) return '#AA00AA'; // Candidate Master
+  if (rating >= 1600) return '#0000FF'; // Expert
+  if (rating >= 1400) return '#03A89E'; // Specialist
+  if (rating >= 1200) return '#008000'; // Pupil
+  return '#808080';                     // Newbie
 }
 
 export function RatingChart({ ratingHistory }: RatingChartProps) {

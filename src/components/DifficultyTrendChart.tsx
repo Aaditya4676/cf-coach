@@ -23,14 +23,18 @@ interface DifficultyTrendChartProps {
   userRating: number;
 }
 
+// Codeforces official rating color palette
 function getRatingColor(rating: number): string {
-  if (rating >= 2400) return '#ff0000';
-  if (rating >= 2100) return '#ff8c00';
-  if (rating >= 1900) return '#aa00aa';
-  if (rating >= 1600) return '#4444ff';
-  if (rating >= 1400) return '#03a89e';
-  if (rating >= 1200) return '#008000';
-  return '#808080';
+  if (rating >= 3000) return '#AA0000'; // Legendary Grandmaster
+  if (rating >= 2600) return '#CC0000'; // International Grandmaster
+  if (rating >= 2400) return '#FF3333'; // Grandmaster
+  if (rating >= 2300) return '#FF8C00'; // International Master
+  if (rating >= 2100) return '#FF8C00'; // Master
+  if (rating >= 1900) return '#AA00AA'; // Candidate Master
+  if (rating >= 1600) return '#0000FF'; // Expert
+  if (rating >= 1400) return '#03A89E'; // Specialist
+  if (rating >= 1200) return '#008000'; // Pupil
+  return '#808080';                     // Newbie
 }
 
 // Custom scatter dot colored by CF rank
@@ -85,11 +89,13 @@ export function DifficultyTrendChart({
   const trendMax = weeklyTrend.length > 0 ? Math.max(...weeklyTrend.map(d => d.max)) + 100 : 2000;
 
   const RANK_LINES = [
-    { value: 1200, label: 'Pupil', color: '#008000' },
-    { value: 1400, label: 'Specialist', color: '#03a89e' },
-    { value: 1600, label: 'Expert', color: '#4444ff' },
-    { value: 1900, label: 'CM', color: '#aa00aa' },
-    { value: 2100, label: 'Master', color: '#ff8c00' },
+    { value: 1200, label: 'Pupil',    color: '#008000' },
+    { value: 1400, label: 'Specialist', color: '#03A89E' },
+    { value: 1600, label: 'Expert',   color: '#0000FF' },
+    { value: 1900, label: 'Cand. Master', color: '#AA00AA' },
+    { value: 2100, label: 'Master',   color: '#FF8C00' },
+    { value: 2400, label: 'Grandmaster', color: '#FF3333' },
+    { value: 2600, label: 'Intl. GM', color: '#CC0000' },
   ];
 
   if (weeklyTrend.length === 0 && scatter.length === 0) {
@@ -385,12 +391,13 @@ export function DifficultyTrendChart({
           {/* Legend */}
           <div className="flex gap-md mt-md" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
             {[
-              { label: '< 1200', color: '#808080' },
-              { label: '1200', color: '#008000' },
-              { label: '1400', color: '#03a89e' },
-              { label: '1600', color: '#4444ff' },
-              { label: '1900', color: '#aa00aa' },
-              { label: '2100+', color: '#ff8c00' },
+              { label: 'Newbie',      color: '#808080' },
+              { label: 'Pupil',       color: '#008000' },
+              { label: 'Specialist',  color: '#03A89E' },
+              { label: 'Expert',      color: '#0000FF' },
+              { label: 'Cand. Master', color: '#AA00AA' },
+              { label: 'Master',      color: '#FF8C00' },
+              { label: 'Grandmaster', color: '#FF3333' },
             ].map(l => (
               <div key={l.label} className="flex items-center gap-xs" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                 <div style={{ width: 10, height: 10, borderRadius: '50%', background: l.color, opacity: 0.8 }} />

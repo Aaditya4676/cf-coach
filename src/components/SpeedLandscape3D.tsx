@@ -20,9 +20,35 @@ interface SpeedLandscape3DProps {
 const BUCKET = 100; // changed from 200 to 100
 const SX = 10, SY = 5, SZ = 8;
 
-function ratingColor(rating: number, minR: number, maxR: number): THREE.Color {
-  const t = maxR === minR ? 0.5 : (rating - minR) / (maxR - minR);
-  return new THREE.Color().setHSL(0.6 - t * 0.6, 0.85, 0.5);
+// Codeforces official rating color palette
+function cfRatingColor(rating: number): THREE.Color {
+  if (rating < 1200) return new THREE.Color('#808080'); // Newbie — gray
+  if (rating < 1400) return new THREE.Color('#008000'); // Pupil — green
+  if (rating < 1600) return new THREE.Color('#03A89E'); // Specialist — cyan
+  if (rating < 1900) return new THREE.Color('#0000FF'); // Expert — blue
+  if (rating < 2100) return new THREE.Color('#AA00AA'); // Candidate Master — violet
+  if (rating < 2400) return new THREE.Color('#FF8C00'); // Master / Intl. Master — orange
+  if (rating < 2600) return new THREE.Color('#FF3333'); // Grandmaster — red
+  if (rating < 3000) return new THREE.Color('#CC0000'); // Intl. Grandmaster — dark red
+  return new THREE.Color('#AA0000');                    // Legendary Grandmaster — deeper red
+}
+
+function cfRankName(rating: number): string {
+  if (rating < 1200) return 'Newbie';
+  if (rating < 1400) return 'Pupil';
+  if (rating < 1600) return 'Specialist';
+  if (rating < 1900) return 'Expert';
+  if (rating < 2100) return 'Cand. Master';
+  if (rating < 2300) return 'Master';
+  if (rating < 2400) return 'Intl. Master';
+  if (rating < 2600) return 'Grandmaster';
+  if (rating < 3000) return 'Intl. GM';
+  return 'Legendary GM';
+}
+
+// Keep old signature for compatibility but forward to CF palette
+function ratingColor(rating: number, _minR?: number, _maxR?: number): THREE.Color {
+  return cfRatingColor(rating);
 }
 
 function Scene({ data }: { data: SessionData[] }) {
@@ -61,7 +87,7 @@ function Scene({ data }: { data: SessionData[] }) {
     allRatings.forEach(rating => {
       const sessions = groups.get(rating)!;
       if (!sessions.length) return;
-      const color = ratingColor(rating, minR, maxR);
+      const color = cfRatingColor(rating);
       const z = toZ(rating);
 
       // Build sorted known points: { x, y } from actual solves
@@ -116,7 +142,7 @@ function Scene({ data }: { data: SessionData[] }) {
         z: toZ(rating),
         avgY: toY(avg),
         medY: toY(med),
-        color: ratingColor(rating, minR, maxR),
+        color: cfRatingColor(rating),
         rating,
       });
     });
@@ -128,7 +154,7 @@ function Scene({ data }: { data: SessionData[] }) {
       const b = Math.floor(d.rating / BUCKET) * BUCKET;
       return {
         pos: new THREE.Vector3(toX(d.timestamp), toY(d.minutes), toZ(b)),
-        color: ratingColor(b, minR, maxR),
+        color: cfRatingColor(b),
         data: d,
       };
     });
@@ -303,7 +329,6 @@ export default function SpeedLandscape3D({ data }: SpeedLandscape3DProps) {
 
   // Build legend from data
   const ratingBuckets = [...new Set(data.map(d => Math.floor(d.rating / BUCKET) * BUCKET))].sort((a, b) => a - b);
-  const minR = ratingBuckets[0], maxR = ratingBuckets[ratingBuckets.length - 1];
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', borderRadius: 8, overflow: 'hidden' }}>
@@ -312,28 +337,30 @@ export default function SpeedLandscape3D({ data }: SpeedLandscape3DProps) {
         <fog attach="fog" args={['#060a14', 18, 40]} />
         <ambientLight intensity={0.4} />
         <directionalLight position={[5, 8, 5]} intensity={1} />
-        <pointLight position={[-6, 4, -4]} intensity={0.6} color="#06b6d4" />
-        <pointLight position={[6, 4, 4]} intensity={0.4} color="#a855f7" />
+        <pointLight position={[-6, 4, -4]} intensity={0.6} color="#03A89E" />
+        <pointLight position={[6, 4, 4]} intensity={0.4} color="#AA00AA" />
         <Stars radius={50} depth={30} count={600} factor={3} saturation={0.5} fade speed={0.4} />
         <Scene data={data} />
         <OrbitControls enablePan enableZoom enableRotate autoRotate autoRotateSpeed={0.4} maxPolarAngle={Math.PI / 2.1} minDistance={5} maxDistance={25} />
       </Canvas>
 
-      {/* Rating legend */}
+      {/* Rating legend — Codeforces palette */}
       <div style={{
         position: 'absolute', bottom: 12, left: 12,
         background: 'rgba(6,10,20,0.85)', borderRadius: 8, padding: '8px 12px',
         fontSize: 11, color: '#ffffffa0', backdropFilter: 'blur(8px)',
         border: '1px solid rgba(255,255,255,0.1)', pointerEvents: 'none',
       }}>
-        <div style={{ fontWeight: 700, marginBottom: 6, color: '#fff', fontSize: 12 }}>Difficulty</div>
+        <div style={{ fontWeight: 700, marginBottom: 6, color: '#fff', fontSize: 12 }}>Rating</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {ratingBuckets.map(r => {
-            const c = ratingColor(r, minR, maxR);
+            const c = cfRatingColor(r);
             return (
               <div key={r} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <div style={{ width: 12, height: 12, borderRadius: 3, background: `#${c.getHexString()}` }} />
-                <span>{r}–{r + BUCKET - 1}</span>
+                <span style={{ color: `#${c.getHexString()}`, fontWeight: 600 }}>
+                  {r} <span style={{ color: '#ffffff60', fontWeight: 400 }}>({cfRankName(r)})</span>
+                </span>
               </div>
             );
           })}
