@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useCFHandle } from '@/hooks/useCFHandle';
 import { SolveSession, getSolveSessions, saveSolveSession, getActiveSession, hasRecentCompletion } from '@/lib/practice-timer';
-import { Timer, Play, Square, CheckCircle2, XCircle, Loader2, Target } from 'lucide-react';
+import { Timer, Play, Square, CheckCircle2, XCircle, Loader2, Target, Pause } from 'lucide-react';
 import { getUserSubmissions } from '@/lib/codeforces';
 import { CFProblem } from '@/lib/types';
 import PracticeAnalytics from '@/components/PracticeAnalytics';
@@ -64,10 +64,17 @@ export default function PracticePage() {
   // Timer loop
   useEffect(() => {
     if (activeSession && activeSession.status === 'active') {
-      const startTime = new Date(activeSession.startTime).getTime();
-      timerRef.current = setInterval(() => {
+      const isPaused = activeSession.durationSeconds !== undefined && activeSession.durationSeconds !== null;
+      if (isPaused) {
+        setElapsed(activeSession.durationSeconds!);
+        if (timerRef.current) clearInterval(timerRef.current);
+      } else {
+        const startTime = new Date(activeSession.startTime).getTime();
         setElapsed(Math.floor((Date.now() - startTime) / 1000));
-      }, 1000);
+        timerRef.current = setInterval(() => {
+          setElapsed(Math.floor((Date.now() - startTime) / 1000));
+        }, 1000);
+      }
     } else {
       setElapsed(0);
       if (timerRef.current) clearInterval(timerRef.current);
@@ -82,11 +89,13 @@ export default function PracticePage() {
     setIsPolling(true);
     try {
       const subs = await getUserSubmissions(handle, 1, 20);
-      const startTimeSec = Math.floor(new Date(activeSession.startTime).getTime() / 1000);
+      // Relaxed time check since startTime is shifted forward on resume.
+      // As long as it's an OK in the last 6 hours for this exact problem, it's this session.
+      const sixHoursAgoSec = Math.floor(Date.now() / 1000) - 6 * 3600;
       
       const solved = subs.find(s => 
         s.verdict === 'OK' && 
-        s.creationTimeSeconds >= startTimeSec &&
+        s.creationTimeSeconds >= sixHoursAgoSec &&
         activeSession.problemUrl.includes(s.problem.contestId.toString()) && 
         activeSession.problemUrl.includes(s.problem.index)
       );
@@ -111,7 +120,9 @@ export default function PracticePage() {
         }
 
         // Calculate duration using purely local time to avoid clock skew issues between PC and CF servers
-        const duration = Math.floor((Date.now() - new Date(activeSession.startTime).getTime()) / 1000);
+        const duration = (activeSession.durationSeconds !== undefined && activeSession.durationSeconds !== null)
+          ? activeSession.durationSeconds
+          : Math.floor((Date.now() - new Date(activeSession.startTime).getTime()) / 1000);
         
         const completedSession: SolveSession = {
           ...activeSession,
@@ -138,8 +149,11 @@ export default function PracticePage() {
     let pollInterval: NodeJS.Timeout;
     
     if (activeSession && activeSession.status === 'active') {
-      // Poll every 15 seconds
-      pollInterval = setInterval(checkSubmissions, 15000);
+      const isPaused = activeSession.durationSeconds !== undefined && activeSession.durationSeconds !== null;
+      if (!isPaused) {
+        // Poll every 15 seconds
+        pollInterval = setInterval(checkSubmissions, 15000);
+      }
     }
 
     return () => {
@@ -200,6 +214,31 @@ export default function PracticePage() {
     await saveSolveSession(abandoned);
     setActiveSession(null);
     setUrlInput('');
+    setSessions(await getSolveSessions(handle!));
+  };
+
+  const pausePractice = async () => {
+    if (!activeSession || !handle) return;
+    const pausedSession: SolveSession = {
+      ...activeSession,
+      durationSeconds: elapsed,
+    };
+    await saveSolveSession(pausedSession);
+    setActiveSession(pausedSession);
+    setSessions(await getSolveSessions(handle));
+  };
+
+  const resumePractice = async () => {
+    if (!activeSession || !handle || activeSession.durationSeconds === undefined || activeSession.durationSeconds === null) return;
+    const newStartTime = new Date(Date.now() - activeSession.durationSeconds * 1000).toISOString();
+    
+    const resumedSession: SolveSession = {
+      ...activeSession,
+      startTime: newStartTime,
+      durationSeconds: undefined,
+    };
+    await saveSolveSession(resumedSession);
+    setActiveSession(resumedSession);
     setSessions(await getSolveSessions(handle));
   };
 
@@ -279,6 +318,23 @@ export default function PracticePage() {
                 {activeSession.problemUrl}
               </div>
               <div className="flex gap-md">
+                {activeSession.durationSeconds !== undefined && activeSession.durationSeconds !== null ? (
+                  <button 
+                    className="btn flex-1 flex items-center justify-center gap-sm btn-primary"
+                    onClick={resumePractice}
+                    style={{ padding: '16px', fontSize: '16px' }}
+                  >
+                    <Play fill="currentColor" size={16} /> Resume
+                  </button>
+                ) : (
+                  <button 
+                    className="btn flex-1 flex items-center justify-center gap-sm bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/20"
+                    onClick={pausePractice}
+                    style={{ padding: '16px', fontSize: '16px' }}
+                  >
+                    <Pause fill="currentColor" size={16} /> Pause
+                  </button>
+                )}
                 <button 
                   className="btn flex-1 flex items-center justify-center gap-sm bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20"
                   onClick={abandonPractice}
@@ -289,8 +345,17 @@ export default function PracticePage() {
               </div>
               <div className="mt-xl text-xs text-muted flex flex-col items-center gap-sm">
                 <div className="flex items-center justify-center gap-xs">
-                  {isPolling ? <Loader2 size={12} className="spinner" /> : <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
-                  Auto-polling Codeforces for your solution...
+                  {activeSession.durationSeconds !== undefined && activeSession.durationSeconds !== null ? (
+                    <>
+                      <div className="w-2 h-2 rounded-full bg-amber-500" />
+                      Timer paused. Auto-polling suspended.
+                    </>
+                  ) : (
+                    <>
+                      {isPolling ? <Loader2 size={12} className="spinner" /> : <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
+                      Auto-polling Codeforces for your solution...
+                    </>
+                  )}
                 </div>
                 <button 
                   onClick={checkSubmissions}

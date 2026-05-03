@@ -93,9 +93,9 @@ export async function saveSolveSession(session: SolveSession): Promise<void> {
       problem_info: session.problemInfo || null,
       start_time: session.startTime,
       end_time: session.endTime || null,
-      duration_seconds: session.durationSeconds || null,
+      duration_seconds: session.durationSeconds ?? null,
       status: session.status,
-      rating_delta: session.ratingDelta || null,
+      rating_delta: session.ratingDelta ?? null,
     });
 
     if (error) {
