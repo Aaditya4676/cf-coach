@@ -64,15 +64,15 @@ export default function PracticePage() {
   // Timer loop
   useEffect(() => {
     if (activeSession && activeSession.status === 'active') {
-      const isPaused = activeSession.durationSeconds !== undefined && activeSession.durationSeconds !== null;
+      const isPaused = activeSession.pausedAt != null;
       if (isPaused) {
-        setElapsed(activeSession.durationSeconds!);
+        setElapsed(activeSession.pausedElapsed ?? 0);
         if (timerRef.current) clearInterval(timerRef.current);
       } else {
-        const startTime = new Date(activeSession.startTime).getTime();
-        setElapsed(Math.floor((Date.now() - startTime) / 1000));
+        const startMs = new Date(activeSession.startTime).getTime();
+        setElapsed(Math.floor((Date.now() - startMs) / 1000));
         timerRef.current = setInterval(() => {
-          setElapsed(Math.floor((Date.now() - startTime) / 1000));
+          setElapsed(Math.floor((Date.now() - startMs) / 1000));
         }, 1000);
       }
     } else {
@@ -86,23 +86,22 @@ export default function PracticePage() {
 
   const checkSubmissions = useCallback(async () => {
     if (!handle || !activeSession || activeSession.status !== 'active') return;
+    // Don't poll while paused
+    if (activeSession.pausedAt != null) return;
     setIsPolling(true);
     try {
       const subs = await getUserSubmissions(handle, 1, 20);
-      // Relaxed time check since startTime is shifted forward on resume.
-      // As long as it's an OK in the last 6 hours for this exact problem, it's this session.
-      const sixHoursAgoSec = Math.floor(Date.now() / 1000) - 6 * 3600;
+      const startTimeSec = Math.floor(new Date(activeSession.startTime).getTime() / 1000);
       
       const solved = subs.find(s => 
         s.verdict === 'OK' && 
-        s.creationTimeSeconds >= sixHoursAgoSec &&
+        s.creationTimeSeconds >= startTimeSec &&
         activeSession.problemUrl.includes(s.problem.contestId.toString()) && 
         activeSession.problemUrl.includes(s.problem.index)
       );
 
       if (solved) {
         // Guard: check if this problem was already completed for this session
-        // (prevents duplicate entries on page refresh)
         const isDuplicate = await hasRecentCompletion(handle, activeSession.problemUrl, activeSession.startTime);
         if (isDuplicate) {
           console.warn('Duplicate completion detected, abandoning stale active session');
@@ -111,6 +110,8 @@ export default function PracticePage() {
             status: 'abandoned',
             endTime: new Date().toISOString(),
             durationSeconds: elapsed,
+            pausedElapsed: undefined,
+            pausedAt: undefined,
           };
           await saveSolveSession(abandoned);
           setActiveSession(null);
@@ -119,17 +120,15 @@ export default function PracticePage() {
           return;
         }
 
-        // Calculate duration using purely local time to avoid clock skew issues between PC and CF servers
-        const duration = (activeSession.durationSeconds !== undefined && activeSession.durationSeconds !== null)
-          ? activeSession.durationSeconds
-          : Math.floor((Date.now() - new Date(activeSession.startTime).getTime()) / 1000);
-        
+        // Use current elapsed which already accounts for pause/resume
         const completedSession: SolveSession = {
           ...activeSession,
           status: 'completed',
           endTime: new Date(solved.creationTimeSeconds * 1000).toISOString(),
-          durationSeconds: duration,
-          problemInfo: solved.problem
+          durationSeconds: elapsed,
+          problemInfo: solved.problem,
+          pausedElapsed: undefined,
+          pausedAt: undefined,
         };
         
         await saveSolveSession(completedSession);
@@ -142,18 +141,15 @@ export default function PracticePage() {
     } finally {
       setIsPolling(false);
     }
-  }, [handle, activeSession]);
+  }, [handle, activeSession, elapsed]);
 
   // Polling loop
   useEffect(() => {
     let pollInterval: NodeJS.Timeout;
     
-    if (activeSession && activeSession.status === 'active') {
-      const isPaused = activeSession.durationSeconds !== undefined && activeSession.durationSeconds !== null;
-      if (!isPaused) {
-        // Poll every 15 seconds
-        pollInterval = setInterval(checkSubmissions, 15000);
-      }
+    if (activeSession && activeSession.status === 'active' && activeSession.pausedAt == null) {
+      // Poll every 15 seconds only when timer is running
+      pollInterval = setInterval(checkSubmissions, 15000);
     }
 
     return () => {
@@ -208,7 +204,9 @@ export default function PracticePage() {
       ...activeSession,
       status: 'abandoned',
       endTime: new Date().toISOString(),
-      durationSeconds: elapsed
+      durationSeconds: elapsed,
+      pausedElapsed: undefined,
+      pausedAt: undefined,
     };
     
     await saveSolveSession(abandoned);
@@ -221,7 +219,8 @@ export default function PracticePage() {
     if (!activeSession || !handle) return;
     const pausedSession: SolveSession = {
       ...activeSession,
-      durationSeconds: elapsed,
+      pausedElapsed: elapsed,
+      pausedAt: new Date().toISOString(),
     };
     await saveSolveSession(pausedSession);
     setActiveSession(pausedSession);
@@ -229,13 +228,16 @@ export default function PracticePage() {
   };
 
   const resumePractice = async () => {
-    if (!activeSession || !handle || activeSession.durationSeconds === undefined || activeSession.durationSeconds === null) return;
-    const newStartTime = new Date(Date.now() - activeSession.durationSeconds * 1000).toISOString();
+    if (!activeSession || !handle || activeSession.pausedAt == null) return;
+    const savedElapsed = activeSession.pausedElapsed ?? 0;
+    // Shift startTime so that (now - newStartTime) = savedElapsed at resume instant
+    const newStartTime = new Date(Date.now() - savedElapsed * 1000).toISOString();
     
     const resumedSession: SolveSession = {
       ...activeSession,
       startTime: newStartTime,
-      durationSeconds: undefined,
+      pausedElapsed: undefined,
+      pausedAt: undefined,
     };
     await saveSolveSession(resumedSession);
     setActiveSession(resumedSession);
@@ -265,7 +267,7 @@ export default function PracticePage() {
         {/* Timer Panel */}
         <div className="card text-center" style={{ padding: 'var(--space-2xl)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
           
-          <div className="font-mono" style={{ fontSize: '64px', fontWeight: 'bold', color: activeSession ? 'var(--accent-emerald)' : 'var(--text-muted)', textShadow: activeSession ? '0 0 20px rgba(16, 185, 129, 0.3)' : 'none', marginBottom: 'var(--space-xl)' }}>
+          <div className="font-mono" style={{ fontSize: '64px', fontWeight: 'bold', color: activeSession ? (activeSession.pausedAt ? 'var(--accent-amber, #f59e0b)' : 'var(--accent-emerald)') : 'var(--text-muted)', textShadow: activeSession ? (activeSession.pausedAt ? '0 0 20px rgba(245, 158, 11, 0.3)' : '0 0 20px rgba(16, 185, 129, 0.3)') : 'none', marginBottom: 'var(--space-xl)' }}>
             {formatTime(elapsed)}
           </div>
 
@@ -318,7 +320,7 @@ export default function PracticePage() {
                 {activeSession.problemUrl}
               </div>
               <div className="flex gap-md">
-                {activeSession.durationSeconds !== undefined && activeSession.durationSeconds !== null ? (
+                {activeSession.pausedAt != null ? (
                   <button 
                     className="btn flex-1 flex items-center justify-center gap-sm btn-primary"
                     onClick={resumePractice}
@@ -345,7 +347,7 @@ export default function PracticePage() {
               </div>
               <div className="mt-xl text-xs text-muted flex flex-col items-center gap-sm">
                 <div className="flex items-center justify-center gap-xs">
-                  {activeSession.durationSeconds !== undefined && activeSession.durationSeconds !== null ? (
+                  {activeSession.pausedAt != null ? (
                     <>
                       <div className="w-2 h-2 rounded-full bg-amber-500" />
                       Timer paused. Auto-polling suspended.

@@ -6,11 +6,13 @@ export interface SolveSession {
   handle: string;
   problemUrl: string;
   problemInfo?: CFProblem; // Cached problem info
-  startTime: string; // ISO string
+  startTime: string; // ISO string — never mutated after creation
   endTime?: string; // ISO string
   durationSeconds?: number;
   status: 'active' | 'completed' | 'abandoned';
   ratingDelta?: number; // Post-solve prediction delta (for future advanced ML)
+  pausedElapsed?: number;  // Accumulated seconds at moment of pause (only set while paused)
+  pausedAt?: string;       // ISO string of when the timer was paused
 }
 
 const STORAGE_KEY = 'cf_coach_solve_sessions';
@@ -53,17 +55,26 @@ export async function getSolveSessions(handle: string): Promise<SolveSession[]> 
 
       if (error) throw error;
 
-      return (data || []).map((d: any) => ({
-        id: d.id,
-        handle,
-        problemUrl: d.problem_url,
-        problemInfo: d.problem_info,
-        startTime: d.start_time,
-        endTime: d.end_time,
-        durationSeconds: d.duration_seconds,
-        status: d.status,
-        ratingDelta: d.rating_delta,
-      }));
+      return (data || []).map((d: any) => {
+        // pausedElapsed and pausedAt are stored inside problem_info JSONB to avoid migration
+        const pauseState = d.problem_info?._pauseState;
+        const problemInfo = d.problem_info ? { ...d.problem_info } : undefined;
+        if (problemInfo) delete problemInfo._pauseState;
+
+        return {
+          id: d.id,
+          handle,
+          problemUrl: d.problem_url,
+          problemInfo: problemInfo && Object.keys(problemInfo).length > 0 ? problemInfo : undefined,
+          startTime: d.start_time,
+          endTime: d.end_time,
+          durationSeconds: d.duration_seconds,
+          status: d.status,
+          ratingDelta: d.rating_delta,
+          pausedElapsed: pauseState?.pausedElapsed ?? undefined,
+          pausedAt: pauseState?.pausedAt ?? undefined,
+        };
+      });
     } catch (err) {
       console.error('Supabase getSolveSessions error, falling back to localStorage', err);
     }
@@ -86,11 +97,20 @@ export async function saveSolveSession(session: SolveSession): Promise<void> {
 
   if (isSupabaseConfigured()) {
     const profileId = await ensureProfile(session.handle);
+    // Pack pausedElapsed/pausedAt into problem_info JSONB to avoid needing a DB migration
+    const problemInfoWithPause = {
+      ...(session.problemInfo || {}),
+      ...(session.pausedElapsed != null || session.pausedAt
+        ? { _pauseState: { pausedElapsed: session.pausedElapsed, pausedAt: session.pausedAt } }
+        : {}),
+    };
+    const hasInfo = Object.keys(problemInfoWithPause).length > 0;
+
     const { error } = await supabase.from('solve_sessions').upsert({
       id: session.id,
       profile_id: profileId,
       problem_url: session.problemUrl,
-      problem_info: session.problemInfo || null,
+      problem_info: hasInfo ? problemInfoWithPause : null,
       start_time: session.startTime,
       end_time: session.endTime || null,
       duration_seconds: session.durationSeconds ?? null,
@@ -142,16 +162,22 @@ export async function getActiveSession(handle: string): Promise<SolveSession | n
 
   if (!active) return null;
 
-  const ageMs = Date.now() - new Date(active.startTime).getTime();
+  // For stale detection: if paused, measure from when it was paused, not from start
+  const referenceTime = active.pausedAt
+    ? new Date(active.pausedAt).getTime()
+    : new Date(active.startTime).getTime();
+  const ageMs = Date.now() - referenceTime;
 
-  // Auto-abandon sessions older than 6 hours
+  // Auto-abandon sessions idle for longer than 6 hours
   if (ageMs > STALE_SESSION_MS) {
-    console.warn(`Auto-abandoning stale session ${active.id} (age: ${Math.floor(ageMs / 60000)}min)`);
+    console.warn(`Auto-abandoning stale session ${active.id} (idle: ${Math.floor(ageMs / 60000)}min)`);
     const abandoned: SolveSession = {
       ...active,
       status: 'abandoned',
       endTime: new Date().toISOString(),
-      durationSeconds: Math.floor(ageMs / 1000),
+      durationSeconds: active.pausedElapsed ?? Math.floor((Date.now() - new Date(active.startTime).getTime()) / 1000),
+      pausedElapsed: undefined,
+      pausedAt: undefined,
     };
     await saveSolveSession(abandoned);
     return null;
@@ -174,7 +200,9 @@ export async function getActiveSession(handle: string): Promise<SolveSession | n
       ...active,
       status: 'abandoned',
       endTime: new Date().toISOString(),
-      durationSeconds: Math.floor(ageMs / 1000),
+      durationSeconds: active.pausedElapsed ?? Math.floor((Date.now() - activeStart) / 1000),
+      pausedElapsed: undefined,
+      pausedAt: undefined,
     };
     await saveSolveSession(abandoned);
     return null;
