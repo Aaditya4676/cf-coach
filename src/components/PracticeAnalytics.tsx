@@ -8,6 +8,7 @@ import {
 import { SolveSession } from '@/lib/practice-timer';
 import { BarChart3, TrendingUp, Clock, Target, Zap, Activity, Award, Flame, Brain, Gauge, TrendingDown } from 'lucide-react';
 import SpeedLandscape3D from './SpeedLandscape3D';
+import SurfaceLandscape3D from './SurfaceLandscape3D';
 
 interface PracticeAnalyticsProps {
   sessions: SolveSession[];
@@ -116,6 +117,68 @@ function DifficultySpeedPanel({ scatterData, ratingData }: DvSProps) {
             </LineChart>
           )}
         </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ---- 3D Landscape Section with plot-type toggle ----
+type LandscapeMode = 'ribbon' | 'surface';
+
+interface LandscapeSectionProps {
+  scatterData: { rating: number; minutes: number; name: string; date: string; timestamp: number }[];
+}
+
+function LandscapeSection({ scatterData }: LandscapeSectionProps) {
+  const [mode, setMode] = useState<LandscapeMode>('ribbon');
+
+  const modes: { key: LandscapeMode; label: string; desc: string }[] = [
+    { key: 'ribbon', label: '🏔️ Ribbon', desc: 'Extruded bars by rating' },
+    { key: 'surface', label: '🌋 Surface', desc: 'Smooth interpolated terrain' },
+  ];
+
+  return (
+    <div className="card" style={{ padding: 'var(--space-lg)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+          <span style={{ fontSize: 20 }}>🌌</span>
+          <h3 style={{ fontSize: 16, fontWeight: 700 }}>3D Speed Landscape</h3>
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {modes.map(m => (
+            <button
+              key={m.key}
+              onClick={() => setMode(m.key)}
+              title={m.desc}
+              style={{
+                padding: '5px 14px',
+                fontSize: 12,
+                borderRadius: 8,
+                cursor: 'pointer',
+                background: mode === m.key
+                  ? 'linear-gradient(135deg, rgba(6,182,212,0.25), rgba(139,92,246,0.25))'
+                  : 'transparent',
+                color: mode === m.key ? '#fff' : 'var(--text-muted)',
+                border: `1px solid ${mode === m.key ? 'rgba(6,182,212,0.5)' : '#ffffff15'}`,
+                fontWeight: mode === m.key ? 700 : 400,
+                transition: 'all 0.2s ease',
+                backdropFilter: mode === m.key ? 'blur(8px)' : 'none',
+                letterSpacing: '0.02em',
+              }}
+            >{m.label}</button>
+          ))}
+        </div>
+      </div>
+      <p className="text-muted text-xs" style={{ marginBottom: 'var(--space-md)' }}>
+        {mode === 'ribbon'
+          ? 'Visualize how your solve time evolves across dates and difficulty ratings. Drag to rotate, scroll to zoom.'
+          : 'Smooth terrain surface interpolated from your solve data. Peaks = slower solves, valleys = faster solves.'}
+      </p>
+      <div style={{ width: '100%', height: 500, borderRadius: 8, overflow: 'hidden' }}>
+        {mode === 'ribbon'
+          ? <SpeedLandscape3D data={scatterData} />
+          : <SurfaceLandscape3D data={scatterData} />
+        }
       </div>
     </div>
   );
@@ -583,20 +646,9 @@ export default function PracticeAnalytics({ sessions }: PracticeAnalyticsProps) 
         )}
       </div>
 
-      {/* 3D Speed Landscape — dedicated full-width card */}
+      {/* 3D Speed Landscape — dedicated full-width card with plot-type toggle */}
       {scatterData.length >= 3 && (
-        <div className="card" style={{ padding: 'var(--space-lg)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
-            <span style={{ fontSize: 20 }}>🌌</span>
-            <h3 style={{ fontSize: 16, fontWeight: 700 }}>3D Speed Landscape</h3>
-          </div>
-          <p className="text-muted text-xs" style={{ marginBottom: 'var(--space-md)' }}>
-            Visualize how your solve time evolves across dates and difficulty ratings. Drag to rotate, scroll to zoom.
-          </p>
-          <div style={{ width: '100%', height: 500, borderRadius: 8, overflow: 'hidden' }}>
-            <SpeedLandscape3D data={scatterData} />
-          </div>
-        </div>
+        <LandscapeSection scatterData={scatterData} />
       )}
 
       {/* Charts Row 3: Tags + Daily Activity */}
