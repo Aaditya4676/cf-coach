@@ -40,6 +40,7 @@ export default function PracticePage() {
   const [elapsed, setElapsed] = useState(0);
   const [isPolling, setIsPolling] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const checkingRef = useRef(false); // Guard against concurrent checkSubmissions
 
   const [verifying, setVerifying] = useState(false);
   const [verifiedProblem, setVerifiedProblem] = useState<CFProblem | null>(null);
@@ -88,6 +89,9 @@ export default function PracticePage() {
     if (!handle || !activeSession || activeSession.status !== 'active') return;
     // Don't poll while paused
     if (activeSession.pausedAt != null) return;
+    // Prevent concurrent checks from racing and corrupting session state
+    if (checkingRef.current) return;
+    checkingRef.current = true;
     setIsPolling(true);
     try {
       const subs = await getUserSubmissions(handle, 1, 20);
@@ -101,31 +105,29 @@ export default function PracticePage() {
       );
 
       if (solved) {
-        // Guard: check if this problem was already completed for this session
+        // Guard: if this session was already completed (e.g. by a concurrent poll),
+        // just clean up local state without overwriting the DB record.
         const isDuplicate = await hasRecentCompletion(handle, activeSession.problemUrl, activeSession.startTime);
         if (isDuplicate) {
-          console.warn('Duplicate completion detected, abandoning stale active session');
-          const abandoned: SolveSession = {
-            ...activeSession,
-            status: 'abandoned',
-            endTime: new Date().toISOString(),
-            durationSeconds: elapsed,
-            pausedElapsed: undefined,
-            pausedAt: undefined,
-          };
-          await saveSolveSession(abandoned);
+          console.warn('Duplicate completion detected — already saved, cleaning up local state');
           setActiveSession(null);
           setUrlInput('');
           setSessions(await getSolveSessions(handle));
           return;
         }
 
-        // Use current elapsed which already accounts for pause/resume
+        // Calculate duration using the actual submission time, NOT the current
+        // elapsed time. This avoids counting Codeforces evaluation/judging
+        // wait time (which can be several minutes) as solve time.
+        const submissionTimeMs = solved.creationTimeSeconds * 1000;
+        const sessionStartMs = new Date(activeSession.startTime).getTime();
+        const realDuration = Math.max(0, Math.floor((submissionTimeMs - sessionStartMs) / 1000));
+
         const completedSession: SolveSession = {
           ...activeSession,
           status: 'completed',
-          endTime: new Date(solved.creationTimeSeconds * 1000).toISOString(),
-          durationSeconds: elapsed,
+          endTime: new Date(submissionTimeMs).toISOString(),
+          durationSeconds: realDuration,
           problemInfo: solved.problem,
           pausedElapsed: undefined,
           pausedAt: undefined,
@@ -140,8 +142,9 @@ export default function PracticePage() {
       console.error('Polling error', err);
     } finally {
       setIsPolling(false);
+      checkingRef.current = false;
     }
-  }, [handle, activeSession, elapsed]);
+  }, [handle, activeSession]);
 
   // Polling loop
   useEffect(() => {
