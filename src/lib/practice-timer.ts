@@ -149,6 +149,30 @@ function _saveToLocalStorage(session: SolveSession): void {
   }
 }
 
+export async function deleteSolveSession(id: string): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  if (isSupabaseConfigured()) {
+    try {
+      const { error } = await supabase.from('solve_sessions').delete().eq('id', id);
+      if (error) console.error('Supabase deleteSolveSession error:', error);
+    } catch (err) {
+      console.error('Supabase deleteSolveSession error:', err);
+    }
+  }
+
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const allSessions: SolveSession[] = JSON.parse(raw);
+      const filtered = allSessions.filter(s => s.id !== id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+    }
+  } catch (err) {
+    console.error('Failed to delete solve session from localStorage', err);
+  }
+}
+
 /**
  * Get the active session for a handle.
  * Automatically abandons stale sessions (older than STALE_SESSION_MS).
@@ -195,16 +219,8 @@ export async function getActiveSession(handle: string): Promise<SolveSession | n
   );
 
   if (alreadyCompleted) {
-    console.warn(`Auto-abandoning zombie session ${active.id} — already completed as ${alreadyCompleted.id}`);
-    const abandoned: SolveSession = {
-      ...active,
-      status: 'abandoned',
-      endTime: new Date().toISOString(),
-      durationSeconds: active.pausedElapsed ?? Math.floor((Date.now() - activeStart) / 1000),
-      pausedElapsed: undefined,
-      pausedAt: undefined,
-    };
-    await saveSolveSession(abandoned);
+    console.warn(`Deleting zombie session ${active.id} — already completed as ${alreadyCompleted.id}`);
+    await deleteSolveSession(active.id);
     return null;
   }
 
