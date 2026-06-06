@@ -305,6 +305,24 @@ export default function PracticePage() {
     setSessions(await getSolveSessions(handle));
   };
 
+  const completeContest = async () => {
+    if (!activeSession) return;
+    
+    const completed: SolveSession = {
+      ...activeSession,
+      status: 'completed',
+      endTime: new Date().toISOString(),
+      durationSeconds: elapsed,
+      pausedElapsed: undefined,
+      pausedAt: undefined,
+    };
+    
+    await saveSolveSession(completed);
+    setActiveSession(null);
+    setUrlInput('');
+    setSessions(await getSolveSessions(handle!));
+  };
+
   const abandonPractice = async () => {
     if (!activeSession) return;
     
@@ -476,13 +494,24 @@ export default function PracticePage() {
                     <Pause fill="currentColor" size={16} /> Pause
                   </button>
                 )}
-                <button 
-                  className="btn flex-1 flex items-center justify-center gap-sm bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20"
-                  onClick={abandonPractice}
-                  style={{ padding: '16px', fontSize: '16px' }}
-                >
-                  <Square fill="currentColor" size={16} /> Abandon
-                </button>
+                
+                {activeSession.problemInfo?._contestProblems ? (
+                  <button 
+                    className="btn flex-1 flex items-center justify-center gap-sm bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20"
+                    onClick={completeContest}
+                    style={{ padding: '16px', fontSize: '16px' }}
+                  >
+                    <CheckCircle2 fill="currentColor" size={16} /> Finish
+                  </button>
+                ) : (
+                  <button 
+                    className="btn flex-1 flex items-center justify-center gap-sm bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20"
+                    onClick={abandonPractice}
+                    style={{ padding: '16px', fontSize: '16px' }}
+                  >
+                    <Square fill="currentColor" size={16} /> Abandon
+                  </button>
+                )}
               </div>
               <div className="mt-xl text-xs text-muted flex flex-col items-center gap-sm">
                 <div className="flex items-center justify-center gap-xs">
