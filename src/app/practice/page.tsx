@@ -16,16 +16,22 @@ function formatTime(seconds: number) {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-function parseProblemInput(input: string): { contestId: number; index: string } | null {
+function parseInput(input: string): { type: 'problem'; contestId: number; index: string } | { type: 'contest'; contestId: number } | null {
   input = input.trim();
   let match = input.match(/contest\/(\d+)\/problem\/([A-Za-z0-9]+)/i);
-  if (match) return { contestId: parseInt(match[1]), index: match[2].toUpperCase() };
+  if (match) return { type: 'problem', contestId: parseInt(match[1]), index: match[2].toUpperCase() };
   
   match = input.match(/problemset\/problem\/(\d+)\/([A-Za-z0-9]+)/i);
-  if (match) return { contestId: parseInt(match[1]), index: match[2].toUpperCase() };
+  if (match) return { type: 'problem', contestId: parseInt(match[1]), index: match[2].toUpperCase() };
   
-  match = input.match(/^(\d+)\s*([A-Za-z0-9]+)$/i);
-  if (match) return { contestId: parseInt(match[1]), index: match[2].toUpperCase() };
+  match = input.match(/^(\d+)\s+([A-Za-z0-9]+)$/i) || input.match(/^(\d+)([A-Za-z]+)$/i);
+  if (match) return { type: 'problem', contestId: parseInt(match[1]), index: match[2].toUpperCase() };
+
+  match = input.match(/contest\/(\d+)\/?$/i);
+  if (match) return { type: 'contest', contestId: parseInt(match[1]) };
+
+  match = input.match(/^(\d+)$/i);
+  if (match) return { type: 'contest', contestId: parseInt(match[1]) };
   
   return null;
 }
@@ -44,6 +50,8 @@ export default function PracticePage() {
 
   const [verifying, setVerifying] = useState(false);
   const [verifiedProblem, setVerifiedProblem] = useState<CFProblem | null>(null);
+  const [verifiedContest, setVerifiedContest] = useState<{ contestId: number; problems: CFProblem[] } | null>(null);
+  const [contestWarning, setContestWarning] = useState<string | null>(null);
   const [verifyError, setVerifyError] = useState<string | null>(null);
 
   // Load data
@@ -87,56 +95,98 @@ export default function PracticePage() {
 
   const checkSubmissions = useCallback(async () => {
     if (!handle || !activeSession || activeSession.status !== 'active') return;
-    // Don't poll while paused
     if (activeSession.pausedAt != null) return;
-    // Prevent concurrent checks from racing and corrupting session state
     if (checkingRef.current) return;
     checkingRef.current = true;
     setIsPolling(true);
     try {
-      const subs = await getUserSubmissions(handle, 1, 20);
+      const subs = await getUserSubmissions(handle, 1, 30);
       const startTimeSec = Math.floor(new Date(activeSession.startTime).getTime() / 1000);
       
-      const solved = subs.find(s => 
-        s.verdict === 'OK' && 
-        s.creationTimeSeconds >= startTimeSec &&
-        activeSession.problemUrl.includes(s.problem.contestId.toString()) && 
-        activeSession.problemUrl.includes(s.problem.index)
-      );
+      if (activeSession.problemInfo?._contestProblems) {
+        const solvedProblems = activeSession.problemInfo._solvedProblems || [];
+        const solvedSet = new Set(solvedProblems.map(sp => `${activeSession.problemInfo!.contestId}/${sp.index}`));
+        
+        const newSolves = subs.filter(s => 
+          s.verdict === 'OK' && 
+          s.creationTimeSeconds >= startTimeSec &&
+          s.problem.contestId === activeSession.problemInfo!.contestId &&
+          !solvedSet.has(`${s.problem.contestId}/${s.problem.index}`)
+        ).sort((a, b) => a.creationTimeSeconds - b.creationTimeSeconds);
 
-      if (solved) {
-        // Guard: if this session was already completed (e.g. by a concurrent poll),
-        // just clean up local state without overwriting the DB record.
-        const isDuplicate = await hasRecentCompletion(handle, activeSession.problemUrl, activeSession.startTime);
-        if (isDuplicate) {
-          console.warn('Duplicate completion detected — already saved, cleaning up local state');
+        if (newSolves.length > 0) {
+          let currentSession = { ...activeSession, problemInfo: { ...activeSession.problemInfo, _solvedProblems: [...solvedProblems] } };
+          
+          for (const s of newSolves) {
+            const lastSolveTimeSec = currentSession.problemInfo._solvedProblems.length > 0 
+              ? Math.floor(currentSession.problemInfo._solvedProblems[currentSession.problemInfo._solvedProblems.length - 1].solveTimeMs / 1000)
+              : startTimeSec;
+            
+            const submissionTimeSec = s.creationTimeSeconds;
+            const realDuration = Math.max(0, submissionTimeSec - lastSolveTimeSec);
+            
+            const singleSession: SolveSession = {
+              id: crypto.randomUUID(),
+              handle,
+              type: 'practice',
+              problemUrl: `https://codeforces.com/problemset/problem/${s.problem.contestId}/${s.problem.index}`,
+              problemInfo: s.problem,
+              startTime: new Date(lastSolveTimeSec * 1000).toISOString(),
+              endTime: new Date(submissionTimeSec * 1000).toISOString(),
+              durationSeconds: realDuration,
+              status: 'completed',
+            };
+            await saveSolveSession(singleSession);
+            
+            currentSession.problemInfo._solvedProblems.push({
+              index: s.problem.index,
+              solveTimeMs: submissionTimeSec * 1000,
+              durationSeconds: realDuration,
+              id: singleSession.id
+            });
+          }
+          
+          await saveSolveSession(currentSession);
+          setActiveSession(currentSession);
+          setSessions(await getSolveSessions(handle));
+        }
+      } else {
+        const solved = subs.find(s => 
+          s.verdict === 'OK' && 
+          s.creationTimeSeconds >= startTimeSec &&
+          activeSession.problemUrl.includes(s.problem.contestId.toString()) && 
+          activeSession.problemUrl.includes(s.problem.index)
+        );
+
+        if (solved) {
+          const isDuplicate = await hasRecentCompletion(handle, activeSession.problemUrl, activeSession.startTime);
+          if (isDuplicate) {
+            console.warn('Duplicate completion detected — already saved, cleaning up local state');
+            setActiveSession(null);
+            setUrlInput('');
+            setSessions(await getSolveSessions(handle));
+            return;
+          }
+
+          const submissionTimeMs = solved.creationTimeSeconds * 1000;
+          const sessionStartMs = new Date(activeSession.startTime).getTime();
+          const realDuration = Math.max(0, Math.floor((submissionTimeMs - sessionStartMs) / 1000));
+
+          const completedSession: SolveSession = {
+            ...activeSession,
+            status: 'completed',
+            endTime: new Date(submissionTimeMs).toISOString(),
+            durationSeconds: realDuration,
+            problemInfo: solved.problem,
+            pausedElapsed: undefined,
+            pausedAt: undefined,
+          };
+          
+          await saveSolveSession(completedSession);
           setActiveSession(null);
           setUrlInput('');
           setSessions(await getSolveSessions(handle));
-          return;
         }
-
-        // Calculate duration using the actual submission time, NOT the current
-        // elapsed time. This avoids counting Codeforces evaluation/judging
-        // wait time (which can be several minutes) as solve time.
-        const submissionTimeMs = solved.creationTimeSeconds * 1000;
-        const sessionStartMs = new Date(activeSession.startTime).getTime();
-        const realDuration = Math.max(0, Math.floor((submissionTimeMs - sessionStartMs) / 1000));
-
-        const completedSession: SolveSession = {
-          ...activeSession,
-          status: 'completed',
-          endTime: new Date(submissionTimeMs).toISOString(),
-          durationSeconds: realDuration,
-          problemInfo: solved.problem,
-          pausedElapsed: undefined,
-          pausedAt: undefined,
-        };
-        
-        await saveSolveSession(completedSession);
-        setActiveSession(null);
-        setUrlInput('');
-        setSessions(await getSolveSessions(handle));
       }
     } catch (err) {
       console.error('Polling error', err);
@@ -160,24 +210,46 @@ export default function PracticePage() {
     };
   }, [activeSession, checkSubmissions]);
 
-  const verifyProblem = async () => {
-    const parsed = parseProblemInput(urlInput);
+  const verifyInput = async () => {
+    const parsed = parseInput(urlInput);
     if (!parsed) {
-      setVerifyError('Invalid format. Use URL or ID like "1553C"');
+      setVerifyError('Invalid format. Use URL or ID like "1553C" or "1553" for contest');
       return;
     }
     
     setVerifying(true);
     setVerifyError(null);
+    setContestWarning(null);
     try {
-      const res = await fetch(`/api/problem?contestId=${parsed.contestId}&index=${parsed.index}`);
-      if (!res.ok) {
-        throw new Error('Problem not found');
+      if (parsed.type === 'problem') {
+        const res = await fetch(`/api/problem?contestId=${parsed.contestId}&index=${parsed.index}`);
+        if (!res.ok) throw new Error('Problem not found');
+        const data = await res.json();
+        setVerifiedProblem(data.problem);
+        setVerifiedContest(null);
+      } else {
+        const res = await fetch(`/api/contest?contestId=${parsed.contestId}`);
+        if (!res.ok) throw new Error('Contest not found');
+        const data = await res.json();
+        setVerifiedContest({ contestId: parsed.contestId, problems: data.problems });
+        setVerifiedProblem(null);
+
+        // Check if user has already solved any of these
+        try {
+          const subs = await getUserSubmissions(handle!, 1, 1000); // Check recent 1000 subs
+          const solvedIds = new Set(subs.filter(s => s.verdict === 'OK').map(s => `${s.problem.contestId}/${s.problem.index}`));
+          const solvedInContest = data.problems.filter((p: CFProblem) => solvedIds.has(`${p.contestId}/${p.index}`));
+          
+          if (solvedInContest.length > 0) {
+            const names = solvedInContest.map((p: CFProblem) => p.index).join(', ');
+            setContestWarning(`You have already solved ${solvedInContest.length} problem(s) in this contest (${names}). Best course of action: Focus on the remaining unsolved problems or practice speed-solving these again.`);
+          }
+        } catch (e) {
+          // ignore error in checking subs
+        }
       }
-      const data = await res.json();
-      setVerifiedProblem(data.problem);
     } catch (err) {
-      setVerifyError(err instanceof Error ? err.message : 'Error fetching problem');
+      setVerifyError(err instanceof Error ? err.message : 'Error fetching data');
     } finally {
       setVerifying(false);
     }
@@ -186,17 +258,50 @@ export default function PracticePage() {
   const startPractice = async () => {
     if (!handle || !urlInput.trim() || activeSession) return;
     
-    const newSession: SolveSession = {
-      id: crypto.randomUUID(),
-      handle,
-      problemUrl: verifiedProblem ? `https://codeforces.com/problemset/problem/${verifiedProblem.contestId}/${verifiedProblem.index}` : urlInput.trim(),
-      problemInfo: verifiedProblem || undefined,
-      startTime: new Date().toISOString(),
-      status: 'active'
-    };
-    
-    await saveSolveSession(newSession);
-    setActiveSession(newSession);
+    if (verifiedContest) {
+      const newSession: SolveSession = {
+        id: crypto.randomUUID(),
+        handle,
+        type: 'virtual_contest',
+        problemUrl: `https://codeforces.com/contest/${verifiedContest.contestId}`,
+        problemInfo: {
+          contestId: verifiedContest.contestId,
+          index: '',
+          name: `Virtual Contest ${verifiedContest.contestId}`,
+          type: 'PROGRAMMING',
+          tags: [],
+          _contestProblems: verifiedContest.problems,
+          _solvedProblems: []
+        },
+        startTime: new Date().toISOString(),
+        status: 'active'
+      };
+      await saveSolveSession(newSession);
+      setActiveSession(newSession);
+    } else if (verifiedProblem) {
+      const newSession: SolveSession = {
+        id: crypto.randomUUID(),
+        handle,
+        type: 'practice',
+        problemUrl: `https://codeforces.com/problemset/problem/${verifiedProblem.contestId}/${verifiedProblem.index}`,
+        problemInfo: verifiedProblem,
+        startTime: new Date().toISOString(),
+        status: 'active'
+      };
+      await saveSolveSession(newSession);
+      setActiveSession(newSession);
+    } else {
+      const newSession: SolveSession = {
+        id: crypto.randomUUID(),
+        handle,
+        type: 'practice',
+        problemUrl: urlInput.trim(),
+        startTime: new Date().toISOString(),
+        status: 'active'
+      };
+      await saveSolveSession(newSession);
+      setActiveSession(newSession);
+    }
     setSessions(await getSolveSessions(handle));
   };
 
@@ -283,7 +388,9 @@ export default function PracticePage() {
                 onChange={(e) => {
                   setUrlInput(e.target.value);
                   setVerifiedProblem(null);
+                  setVerifiedContest(null);
                   setVerifyError(null);
+                  setContestWarning(null);
                 }}
                 className="input-field mb-sm w-full"
                 style={{ textAlign: 'center', fontFamily: 'monospace' }}
@@ -293,20 +400,34 @@ export default function PracticePage() {
                 <div className="text-red-500 text-xs mb-sm">{verifyError}</div>
               )}
 
-              {!verifiedProblem ? (
+              {!verifiedProblem && !verifiedContest ? (
                 <button 
                   className="btn btn-primary w-full flex items-center justify-center gap-sm"
-                  onClick={verifyProblem}
+                  onClick={verifyInput}
                   disabled={!urlInput.trim() || verifying}
                   style={{ padding: '16px', fontSize: '16px' }}
                 >
-                  {verifying ? <Loader2 size={16} className="spinner" /> : <Target size={16} />} Verify Problem
+                  {verifying ? <Loader2 size={16} className="spinner" /> : <Target size={16} />} Verify Target
                 </button>
               ) : (
                 <div className="flex flex-col gap-sm">
-                  <div className="text-sm p-sm rounded border" style={{ borderColor: 'var(--accent-emerald)', background: 'var(--accent-emerald-dim)', color: 'var(--accent-emerald)' }}>
-                    ✅ Verified: <strong>{verifiedProblem.contestId}{verifiedProblem.index} - {verifiedProblem.name}</strong> ({verifiedProblem.rating || 'Unrated'})
-                  </div>
+                  {verifiedProblem && (
+                    <div className="text-sm p-sm rounded border" style={{ borderColor: 'var(--accent-emerald)', background: 'var(--accent-emerald-dim)', color: 'var(--accent-emerald)' }}>
+                      ✅ Verified Problem: <strong>{verifiedProblem.contestId}{verifiedProblem.index} - {verifiedProblem.name}</strong> ({verifiedProblem.rating || 'Unrated'})
+                    </div>
+                  )}
+                  {verifiedContest && (
+                    <>
+                      <div className="text-sm p-sm rounded border" style={{ borderColor: 'var(--accent-emerald)', background: 'var(--accent-emerald-dim)', color: 'var(--accent-emerald)' }}>
+                        ✅ Verified Contest: <strong>Virtual Contest {verifiedContest.contestId}</strong> ({verifiedContest.problems.length} problems)
+                      </div>
+                      {contestWarning && (
+                        <div className="text-sm p-sm rounded border text-left" style={{ borderColor: 'var(--accent-amber)', background: 'var(--accent-amber-dim)', color: 'var(--accent-amber)' }}>
+                          ⚠️ {contestWarning}
+                        </div>
+                      )}
+                    </>
+                  )}
                   <button 
                     className="btn btn-primary w-full flex items-center justify-center gap-sm"
                     onClick={startPractice}
@@ -320,8 +441,23 @@ export default function PracticePage() {
           ) : (
             <div className="w-full max-w-md mx-auto">
               <div className="text-sm text-muted mb-md font-mono truncate px-md py-sm rounded bg-black/20">
-                {activeSession.problemUrl}
+                {activeSession.problemInfo?._contestProblems ? `Virtual Contest ${activeSession.problemInfo?.contestId}` : activeSession.problemUrl}
               </div>
+              
+              {activeSession.problemInfo?._contestProblems && activeSession.problemInfo?._solvedProblems && activeSession.problemInfo._solvedProblems.length > 0 && (
+                <div className="mb-md text-left bg-black/30 p-sm rounded border border-white/10">
+                  <div className="text-xs text-muted mb-xs uppercase tracking-wider font-semibold">Solved in this session</div>
+                  <div className="flex flex-col gap-xs">
+                    {activeSession.problemInfo._solvedProblems.map(sp => (
+                      <div key={sp.index} className="flex justify-between items-center text-sm font-mono">
+                        <span className="text-emerald-400">Problem {sp.index}</span>
+                        <span className="text-cyan-400">+{formatTime(sp.durationSeconds)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
               <div className="flex gap-md">
                 {activeSession.pausedAt != null ? (
                   <button 

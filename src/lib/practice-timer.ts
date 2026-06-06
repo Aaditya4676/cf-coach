@@ -10,6 +10,7 @@ export interface SolveSession {
   endTime?: string; // ISO string
   durationSeconds?: number;
   status: 'active' | 'completed' | 'abandoned';
+  type?: 'practice' | 'virtual_contest'; // distinguish session types
   ratingDelta?: number; // Post-solve prediction delta (for future advanced ML)
   pausedElapsed?: number;  // Accumulated seconds at moment of pause (only set while paused)
   pausedAt?: string;       // ISO string of when the timer was paused

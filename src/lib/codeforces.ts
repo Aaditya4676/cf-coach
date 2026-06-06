@@ -69,6 +69,11 @@ export async function getAllProblems(tags?: string[]): Promise<{ problems: CFPro
   return rateLimitedFetch(endpoint);
 }
 
+export async function getContestProblems(contestId: number): Promise<CFProblem[]> {
+  const result = await rateLimitedFetch<any>(`contest.standings?contestId=${contestId}`);
+  return result.problems;
+}
+
 // --- Helper Functions ---
 
 export function getSubmissionsInTimeRange(

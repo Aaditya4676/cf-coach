@@ -44,6 +44,10 @@ export interface CFProblem {
   points?: number;
   rating?: number;
   tags: string[];
+  
+  // Virtual Contest Tracking
+  _contestProblems?: CFProblem[];
+  _solvedProblems?: { index: string; solveTimeMs: number; durationSeconds: number; id: string }[];
 }
 
 export type CFVerdict =
